@@ -11,7 +11,13 @@ import {
   Plus,
 } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
-import { formatDate, getStops, money, totals } from "@/lib/prototype/domain";
+import {
+  formatDate,
+  getStops,
+  money,
+  totals,
+  selectBatch,
+} from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
   Badge,
@@ -61,11 +67,7 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
           <Button
             onClick={() =>
               commit(
-                (current) => ({
-                  ...current,
-                  selectedBatchId: batch.id,
-                  manualNextStop: null,
-                }),
+                (current) => selectBatch(current, batch.id),
                 `${batch.name} is your active batch.`,
               )
             }
@@ -87,13 +89,7 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
         {batch && (
           <LinkButton
             href="/parcels/new"
-            onClick={() =>
-              commit((current) => ({
-                ...current,
-                selectedBatchId: batch.id,
-                manualNextStop: null,
-              }))
-            }
+            onClick={() => commit((current) => selectBatch(current, batch.id))}
           >
             <Plus size={17} />
             Add parcel
@@ -198,15 +194,17 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
             }
             const id = crypto.randomUUID();
             commit(
-              (current) => ({
-                ...current,
-                batches: [
-                  { id, name: String(data.get("name")).trim(), start, end },
-                  ...current.batches,
-                ],
-                selectedBatchId: id,
-                manualNextStop: null,
-              }),
+              (current) =>
+                selectBatch(
+                  {
+                    ...current,
+                    batches: [
+                      { id, name: String(data.get("name")).trim(), start, end },
+                      ...current.batches,
+                    ],
+                  },
+                  id,
+                ),
               "New weekly batch is ready.",
             );
             setOpen(false);

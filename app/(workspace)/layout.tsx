@@ -1,5 +1,8 @@
 import { Suspense, type ReactNode } from "react";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { WorkspaceAccess } from "@/components/providers";
+
+export const instant = false;
 
 export default function WorkspaceLayout({ children }: { children: ReactNode }) {
   return (
@@ -10,7 +13,9 @@ export default function WorkspaceLayout({ children }: { children: ReactNode }) {
         </div>
       }
     >
-      <WorkspaceShell>{children}</WorkspaceShell>
+      <WorkspaceAccess>
+        <WorkspaceShell>{children}</WorkspaceShell>
+      </WorkspaceAccess>
     </Suspense>
   );
 }

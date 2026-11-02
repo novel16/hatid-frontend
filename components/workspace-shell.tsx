@@ -25,7 +25,8 @@ import {
   X,
 } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
-import { Avatar, Badge, Modal } from "./ui";
+import { Avatar, Badge, Brand, Modal } from "./ui";
+import { useActions } from "./providers";
 
 const links = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -42,21 +43,10 @@ const links = [
   },
 ];
 
-export function Brand({ light = false }: { light?: boolean }) {
-  return (
-    <span className={`brand ${light ? "brand-light" : ""}`}>
-      <span className="brand-mark">
-        <Package size={23} strokeWidth={1.8} />
-      </span>
-      <span>
-        hatid<span className="brand-period">.</span>
-      </span>
-    </span>
-  );
-}
-
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
+  const { session } = useActions();
+  const riderName = session?.user.name ?? state.settings.riderName;
   const searchRef = useRef<HTMLInputElement>(null);
   const path = usePathname();
   const router = useRouter();
@@ -87,13 +77,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       : [];
   const current =
     links.find((link) => path.startsWith(link.href))?.label ??
-    (path.startsWith("/parcels")
-      ? "New parcel"
-      : path.startsWith("/settings")
-        ? "Settings"
-        : path.startsWith("/sync")
-          ? "Offline & sync"
-          : "Notifications");
+    (path.startsWith("/reports")
+      ? "Earnings & reports"
+      : path.startsWith("/parcels")
+        ? "New parcel"
+        : path.startsWith("/settings")
+          ? "Settings"
+          : path.startsWith("/sync")
+            ? "Offline & sync"
+            : "Notifications");
 
   return (
     <div
@@ -163,9 +155,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <ArrowUpRight size={14} />
           </button>
           <Link href="/settings" className="sidebar-profile">
-            <Avatar name={state.settings.riderName} color="sage" small />
+            <Avatar name={riderName} color="sage" small />
             <div>
-              <strong>{state.settings.riderName}</strong>
+              <strong>{riderName}</strong>
               <span>Independent rider</span>
             </div>
             <ChevronRight size={15} />
@@ -259,7 +251,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               href="/settings"
               aria-label="Open rider profile"
             >
-              <Avatar name={state.settings.riderName} color="sage" small />
+              <Avatar name={riderName} color="sage" small />
             </Link>
           </div>
         </header>

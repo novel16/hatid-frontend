@@ -6000,3 +6000,11 @@ body:has(dialog[open]) {
     min-height: 44px;
   }
 }
+.field .field-error {
+  color: #a63630;
+  font-weight: 600;
+}
+
+input[aria-invalid="true"] {
+  border-color: #a63630;
+}

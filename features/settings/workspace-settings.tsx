@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { prototypeStore, usePrototypeState } from "@/lib/prototype/store";
 import { formatDate } from "@/lib/prototype/domain";
-import { authApi } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import { useActions } from "@/components/providers";
 import {
   Avatar,
@@ -32,30 +32,40 @@ import {
   LinkButton,
   Modal,
   PageHeading,
+  PasswordInput,
 } from "@/components/ui";
 
 export function SettingsScreen() {
   const state = usePrototypeState();
-  const { commit, notify, session, setSession } = useActions();
+  const { commit, notify, session, signOut, changePassword } = useActions();
   const router = useRouter();
   const [reset, setReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  async function signOut() {
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordErrors, setPasswordErrors] = useState<
+    Record<string, string[]>
+  >({});
+
+  async function handleSignOut() {
     setSigningOut(true);
-    if (session) {
-      try {
-        await authApi.logout(session.access_token);
-      } catch {
-        notify(
-          "Signed out locally. Server revocation could not be confirmed.",
-          true,
-        );
-      }
-    }
-    setSession(null);
-    setSigningOut(false);
-    router.push("/login");
+    await signOut();
+    router.replace("/login");
+  }
+
+  function savePreference(
+    key: "deliveryAlerts" | "collectionAlerts" | "compactView",
+    value: boolean,
+  ) {
+    commit(
+      (current) => ({
+        ...current,
+        settings: { ...current.settings, [key]: value },
+      }),
+      "Preference saved.",
+    );
   }
 
   return (
@@ -68,8 +78,12 @@ export function SettingsScreen() {
       <div className="settings-layout">
         <div className="form-stack">
           <Card
-            title="Rider profile"
-            description="Profile edits in this prototype are saved on this device."
+            title={session ? "Demo workspace profile" : "Rider profile"}
+            description={
+              session
+                ? "These sample profile edits stay on this device and do not change your signed-in account."
+                : "Profile edits in this prototype are saved on this device."
+            }
             action={<UserRound size={20} />}
           >
             <form
@@ -134,46 +148,19 @@ export function SettingsScreen() {
                 title="Delivery update alerts"
                 description="Get a local alert when delivery outcomes change."
                 checked={state.settings.deliveryAlerts}
-                onChange={(value) =>
-                  commit(
-                    (current) => ({
-                      ...current,
-                      settings: { ...current.settings, deliveryAlerts: value },
-                    }),
-                    "Delivery alert preference saved.",
-                  )
-                }
+                onChange={(value) => savePreference("deliveryAlerts", value)}
               />
               <Preference
                 title="Collection & remittance alerts"
                 description="Highlight new receipt and handover records."
                 checked={state.settings.collectionAlerts}
-                onChange={(value) =>
-                  commit(
-                    (current) => ({
-                      ...current,
-                      settings: {
-                        ...current.settings,
-                        collectionAlerts: value,
-                      },
-                    }),
-                    "Collection alert preference saved.",
-                  )
-                }
+                onChange={(value) => savePreference("collectionAlerts", value)}
               />
               <Preference
                 title="Compact workspace"
                 description="Reduce table spacing when reviewing more parcels."
                 checked={state.settings.compactView}
-                onChange={(value) =>
-                  commit(
-                    (current) => ({
-                      ...current,
-                      settings: { ...current.settings, compactView: value },
-                    }),
-                    "Workspace density updated.",
-                  )
-                }
+                onChange={(value) => savePreference("compactView", value)}
               />
             </div>
           </Card>
@@ -214,7 +201,8 @@ export function SettingsScreen() {
                   <p className="small-muted">
                     This sign-in lasts until{" "}
                     {formatDate(session.expires_at, true)} or you sign out.
-                    Prototype delivery records stay local.
+                    Refreshing the page also asks you to sign in again. Demo
+                    delivery records stay local.
                   </p>
                 </>
               ) : (
@@ -230,7 +218,23 @@ export function SettingsScreen() {
                   </LinkButton>
                 </>
               )}
-              <Button variant="ghost" onClick={signOut} disabled={signingOut}>
+              {session && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setPasswordError("");
+                    setPasswordErrors({});
+                    setPasswordOpen(true);
+                  }}
+                >
+                  Change password
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                onClick={handleSignOut}
+                disabled={signingOut}
+              >
                 <LogOut size={15} />
                 {signingOut
                   ? "Signing out…"
@@ -272,6 +276,105 @@ export function SettingsScreen() {
           </div>
         </aside>
       </div>
+      {passwordOpen && (
+        <Modal
+          open={passwordOpen}
+          onClose={() => {
+            if (!passwordBusy) setPasswordOpen(false);
+          }}
+          title="Change your password"
+          description="A successful change signs you out on every device."
+        >
+          <form
+            method="post"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (passwordBusy) return;
+              setPasswordBusy(true);
+              setPasswordError("");
+              setPasswordErrors({});
+              const data = new FormData(event.currentTarget);
+              try {
+                await changePassword({
+                  current_password: String(data.get("current_password") ?? ""),
+                  password: String(data.get("password") ?? ""),
+                  password_confirmation: String(
+                    data.get("password_confirmation") ?? "",
+                  ),
+                });
+                router.replace("/login");
+              } catch (cause) {
+                setPasswordError(errorMessage(cause));
+                if (cause instanceof ApiError) setPasswordErrors(cause.errors);
+              } finally {
+                setPasswordBusy(false);
+              }
+            }}
+          >
+            <div className="dialog-body form-stack">
+              {passwordError && (
+                <div className="form-error" role="alert">
+                  {passwordError}
+                </div>
+              )}
+              <Field
+                label="Current password"
+                required
+                error={passwordErrors.current_password?.[0]}
+              >
+                <PasswordInput
+                  name="current_password"
+                  required
+                  maxLength={72}
+                  autoComplete="current-password"
+                  aria-invalid={!!passwordErrors.current_password}
+                />
+              </Field>
+              <Field
+                label="New password"
+                required
+                error={passwordErrors.password?.[0]}
+                hint="At least 12 characters, with upper/lowercase and a number."
+              >
+                <PasswordInput
+                  name="password"
+                  required
+                  minLength={12}
+                  maxLength={72}
+                  autoComplete="new-password"
+                  aria-invalid={!!passwordErrors.password}
+                />
+              </Field>
+              <Field
+                label="Confirm new password"
+                required
+                error={passwordErrors.password_confirmation?.[0]}
+              >
+                <PasswordInput
+                  name="password_confirmation"
+                  required
+                  minLength={12}
+                  maxLength={72}
+                  autoComplete="new-password"
+                  aria-invalid={!!passwordErrors.password_confirmation}
+                />
+              </Field>
+            </div>
+            <footer className="dialog-footer">
+              <Button
+                variant="secondary"
+                disabled={passwordBusy}
+                onClick={() => setPasswordOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={passwordBusy}>
+                {passwordBusy ? "Updating…" : "Update password"}
+              </Button>
+            </footer>
+          </form>
+        </Modal>
+      )}
       <Modal
         open={reset}
         onClose={() => setReset(false)}

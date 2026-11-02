@@ -2,24 +2,39 @@
 
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   CheckCheck,
   CircleAlert,
-  Eye,
-  EyeOff,
   MapPin,
   Package,
   ShieldCheck,
   Wallet,
 } from "lucide-react";
-import { ApiError, authApi } from "@/lib/api";
+import {
+  ApiError,
+  authApi,
+  errorMessage,
+  normalizeEmail,
+  workspacePath,
+} from "@/lib/api";
 import { useActions } from "@/components/providers";
-import { Brand } from "@/components/workspace-shell";
-import { Badge, Button, Field, LinkButton } from "@/components/ui";
+import {
+  Badge,
+  Brand,
+  Button,
+  Field,
+  LinkButton,
+  PasswordInput,
+} from "@/components/ui";
 
 type AuthMode = "login" | "signup" | "forgot" | "reset";
 const titles: Record<AuthMode, string> = {
@@ -29,14 +44,90 @@ const titles: Record<AuthMode, string> = {
   reset: "A fresh start for your account.",
 };
 
+const subscribeToHydration = () => () => {};
+
 export function AuthScreen({ mode }: { mode: AuthMode }) {
-  const { setSession, commit } = useActions();
+  const { session, signIn, signOut, enterDemo } = useActions();
   const params = useSearchParams();
   const router = useRouter();
-  const [visible, setVisible] = useState(false);
+  const ready = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const destination = workspacePath(params.get("next"));
+  const missingResetToken = mode === "reset" && !params.get("token");
+  const message =
+    error ||
+    (missingResetToken
+      ? "This reset link is incomplete. Request a new password reset link."
+      : "");
+
+  useEffect(() => {
+    if (session && (mode === "login" || mode === "signup"))
+      router.replace(destination);
+  }, [session, mode, destination, router]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy || missingResetToken) return;
+    setError("");
+    setErrors({});
+    setBusy(true);
+    const data = new FormData(event.currentTarget);
+    const email = String(data.get("email") ?? "");
+    const password = String(data.get("password") ?? "");
+    const password_confirmation = String(
+      data.get("password_confirmation") ?? "",
+    );
+    try {
+      if (mode === "forgot") {
+        await authApi.forgotPassword(email);
+        setSuccess(true);
+      } else if (mode === "reset") {
+        await authApi.resetPassword({
+          email,
+          token: params.get("token") ?? "",
+          password,
+          password_confirmation,
+        });
+        if (session?.user.email === normalizeEmail(email)) await signOut();
+        setSuccess(true);
+      } else {
+        const credentials = {
+          email,
+          password,
+          device_name: "Hatid web browser",
+        };
+        const result =
+          mode === "signup"
+            ? await authApi.register({
+                ...credentials,
+                name: String(data.get("name") ?? ""),
+                password_confirmation,
+              })
+            : await authApi.login(credentials);
+        await signIn(result.data);
+      }
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to sign in. Please try again."));
+      if (cause instanceof ApiError) setErrors(cause.errors);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (session && (mode === "login" || mode === "signup")) {
+    return (
+      <main id="main-content" className="workspace-loading">
+        Opening your workspace…
+      </main>
+    );
+  }
 
   return (
     <div className="auth-layout">
@@ -95,7 +186,7 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
           Built for independent riders. Made for the way you deliver.
         </p>
       </aside>
-      <main className="auth-main">
+      <main id="main-content" className="auth-main">
         <div className="auth-mobile-logo">
           <Link href="/dashboard">
             <Brand />
@@ -138,7 +229,11 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
                 Return to sign in
                 <ArrowRight size={16} />
               </LinkButton>
-              <Link className="text-link" href="/dashboard">
+              <Link
+                className="text-link"
+                href={destination}
+                onClick={enterDemo}
+              >
                 Explore the prototype instead
                 <ArrowRight size={14} />
               </Link>
@@ -146,73 +241,25 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
           ) : (
             <form
               className="auth-form form-stack"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                setError("");
-                setBusy(true);
-                const data = new FormData(event.currentTarget);
-                try {
-                  const email = String(data.get("email"));
-                  if (mode === "forgot") {
-                    await authApi.forgotPassword(email);
-                    setSuccess(true);
-                  } else if (mode === "reset") {
-                    await authApi.resetPassword({
-                      email,
-                      token: params.get("token") ?? "",
-                      password: String(data.get("password")),
-                      password_confirmation: String(
-                        data.get("password_confirmation"),
-                      ),
-                    });
-                    setSuccess(true);
-                  } else {
-                    const credentials = {
-                      email,
-                      password: String(data.get("password")),
-                      device_name: "Hatid web browser",
-                    };
-                    const result =
-                      mode === "signup"
-                        ? await authApi.register({
-                            ...credentials,
-                            name: String(data.get("name")),
-                            password_confirmation: String(
-                              data.get("password_confirmation"),
-                            ),
-                          })
-                        : await authApi.login(credentials);
-                    setSession(result.data);
-                    commit((state) => ({
-                      ...state,
-                      settings: {
-                        ...state.settings,
-                        riderName: result.data.user.name,
-                      },
-                    }));
-                    router.push("/dashboard");
-                  }
-                } catch (cause) {
-                  setError(
-                    cause instanceof ApiError
-                      ? (Object.values(cause.errors).flat()[0] ?? cause.message)
-                      : "Couldn’t connect to your account. You can still explore the prototype.",
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              }}
+              method="post"
+              onSubmit={submit}
             >
-              {error && (
+              {missingResetToken && (
+                <Link className="text-link" href="/forgot-password">
+                  Request a new reset link
+                </Link>
+              )}
+              {message && (
                 <div className="form-error" role="alert">
                   <CircleAlert size={18} />
-                  <p>{error}</p>
+                  <p>{message}</p>
                 </div>
               )}
               {mode === "signup" && (
-                <Field label="Full name" required>
+                <Field label="Full name" required error={errors.name?.[0]}>
                   <input
                     name="name"
+                    aria-invalid={!!errors.name}
                     required
                     autoComplete="name"
                     placeholder="Your full name"
@@ -220,9 +267,12 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
                   />
                 </Field>
               )}
-              <Field label="Email address" required>
+              <Field label="Email address" required error={errors.email?.[0]}>
                 <input
                   name="email"
+                  aria-invalid={!!errors.email}
+                  autoCapitalize="none"
+                  spellCheck={false}
                   type="email"
                   required
                   defaultValue={
@@ -236,6 +286,7 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
               {mode !== "forgot" && (
                 <Field
                   label={mode === "reset" ? "New password" : "Password"}
+                  error={errors.password?.[0]}
                   required
                   hint={
                     mode === "signup" || mode === "reset"
@@ -243,37 +294,32 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
                       : undefined
                   }
                 >
-                  <div className="password-input">
-                    <input
-                      name="password"
-                      required
-                      type={visible ? "text" : "password"}
-                      minLength={mode === "login" ? 1 : 12}
-                      maxLength={72}
-                      autoComplete={
-                        mode === "login" ? "current-password" : "new-password"
-                      }
-                      placeholder={
-                        mode === "login"
-                          ? "Enter your password"
-                          : "Create a strong password"
-                      }
-                    />
-                    <button
-                      type="button"
-                      aria-label={visible ? "Hide password" : "Show password"}
-                      onClick={() => setVisible((value) => !value)}
-                    >
-                      {visible ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
+                  <PasswordInput
+                    name="password"
+                    required
+                    aria-invalid={!!errors.password}
+                    minLength={mode === "login" ? 1 : 12}
+                    maxLength={72}
+                    autoComplete={
+                      mode === "login" ? "current-password" : "new-password"
+                    }
+                    placeholder={
+                      mode === "login"
+                        ? "Enter your password"
+                        : "Create a strong password"
+                    }
+                  />
                 </Field>
               )}
               {(mode === "signup" || mode === "reset") && (
-                <Field label="Confirm password" required>
-                  <input
+                <Field
+                  label="Confirm password"
+                  required
+                  error={errors.password_confirmation?.[0]}
+                >
+                  <PasswordInput
                     name="password_confirmation"
-                    type="password"
+                    aria-invalid={!!errors.password_confirmation}
                     required
                     minLength={12}
                     maxLength={72}
@@ -290,9 +336,9 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
               <Button
                 type="submit"
                 className="button-full auth-submit"
-                disabled={busy}
+                disabled={!ready || busy || missingResetToken}
               >
-                {busy
+                {!ready || busy
                   ? "One moment…"
                   : mode === "login"
                     ? "Sign in to Hatid"
@@ -318,14 +364,18 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
               : "EXPLORE WITH SAMPLE DATA"}
             <span />
           </div>
-          <LinkButton
-            href="/dashboard"
+          <Button
             variant="secondary"
             className="button-full"
+            disabled={!ready || busy}
+            onClick={() => {
+              enterDemo();
+              router.replace(destination);
+            }}
           >
             Try the interactive prototype
             <ArrowRight size={16} />
-          </LinkButton>
+          </Button>
           <p className="auth-bottom-note">
             <ShieldCheck size={14} />A rider-first workspace, from entry to
             handover.
@@ -344,6 +394,7 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
 }
 
 export function WelcomeScreen() {
+  const { enterDemo } = useActions();
   const [step, setStep] = useState(0);
   const steps = [
     {
@@ -373,15 +424,15 @@ export function WelcomeScreen() {
   return (
     <div className="welcome-page">
       <header>
-        <Link href="/dashboard">
+        <Link href="/dashboard" onClick={enterDemo}>
           <Brand />
         </Link>
-        <Link className="text-link" href="/dashboard">
+        <Link className="text-link" href="/dashboard" onClick={enterDemo}>
           Skip tour
           <ArrowRight size={15} />
         </Link>
       </header>
-      <main>
+      <main id="main-content">
         <div className="welcome-illustration">
           <span className="welcome-orbit orbit-one" />
           <span className="welcome-orbit orbit-two" />
@@ -433,7 +484,7 @@ export function WelcomeScreen() {
                 <ArrowRight size={16} />
               </Button>
             ) : (
-              <LinkButton href="/dashboard">
+              <LinkButton href="/dashboard" onClick={enterDemo}>
                 Open my workspace
                 <ArrowRight size={16} />
               </LinkButton>

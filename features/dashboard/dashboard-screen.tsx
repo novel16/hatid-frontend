@@ -14,7 +14,13 @@ import {
   Wallet,
 } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
-import { formatDate, getStops, money, totals } from "@/lib/prototype/domain";
+import {
+  formatDate,
+  getStops,
+  money,
+  totals,
+  selectBatch,
+} from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
   Badge,
@@ -27,7 +33,8 @@ import { NextStopCard, StopTable } from "@/components/delivery-ui";
 
 export function DashboardScreen() {
   const state = usePrototypeState();
-  const { commit } = useActions();
+  const { commit, session } = useActions();
+  const riderName = session?.user.name ?? state.settings.riderName;
   const summary = totals(state, state.selectedBatchId);
   const batch = state.batches.find((item) => item.id === state.selectedBatchId);
   const goal = Math.max(1, summary.count);
@@ -36,18 +43,14 @@ export function DashboardScreen() {
     <div className="dashboard-screen">
       <PageHeading
         eyebrow="A FRESH START, A CLEAR ROUTE"
-        title={`Magandang araw, ${state.settings.riderName.split(" ")[0]}.`}
+        title={`Magandang araw, ${riderName.split(" ")[0]}.`}
         description={`${summary.pending} parcels ready to deliver. Let’s take it one stop at a time.`}
       >
         <select
           aria-label="Active weekly batch"
           value={state.selectedBatchId}
           onChange={(event) =>
-            commit((current) => ({
-              ...current,
-              selectedBatchId: event.target.value,
-              manualNextStop: null,
-            }))
+            commit((current) => selectBatch(current, event.target.value))
           }
         >
           {state.batches.map((item) => (

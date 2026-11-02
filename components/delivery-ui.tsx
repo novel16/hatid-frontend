@@ -20,6 +20,7 @@ import {
   hasRoadEstimate,
   money,
   recommendedStops,
+  selectNextStop,
 } from "@/lib/prototype/domain";
 import { usePrototypeState } from "@/lib/prototype/store";
 import type { Stop } from "@/lib/prototype/types";
@@ -209,7 +210,7 @@ export function ChooseStopDialog({
               key={stop.key}
               onClick={() => {
                 commit(
-                  (current) => ({ ...current, manualNextStop: stop.key }),
+                  (current) => selectNextStop(current, stop.key),
                   `${stop.customer.name} is your next stop.`,
                 );
                 onClose();

@@ -19,7 +19,13 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { usePrototypeHydrated, usePrototypeState } from "@/lib/prototype/store";
-import { eligible, formatDate, getStops, money } from "@/lib/prototype/domain";
+import {
+  eligible,
+  formatDate,
+  getStops,
+  money,
+  selectNextStop,
+} from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
   Avatar,
@@ -130,13 +136,11 @@ export function DeliveryDetailScreen({ parcelId }: { parcelId: string }) {
               </Button>
               <Button
                 variant="secondary"
+                disabled={!stop.parcels.some((item) => eligible(item))}
                 onClick={() => {
                   commit(
-                    (current) => ({
-                      ...current,
-                      selectedBatchId: parcel.batchId,
-                      manualNextStop: stop.key,
-                    }),
+                    (current) =>
+                      selectNextStop(current, stop.key, parcel.batchId),
                     "Next stop selected manually.",
                   );
                 }}
@@ -144,16 +148,14 @@ export function DeliveryDetailScreen({ parcelId }: { parcelId: string }) {
                 <Navigation size={15} />
                 Make next stop
               </Button>
-              {hasPin && (
+              {hasPin && stop.parcels.some((item) => eligible(item)) && (
                 <Link
                   href="/map"
                   className="button button-ghost"
                   onClick={() =>
-                    commit((current) => ({
-                      ...current,
-                      selectedBatchId: parcel.batchId,
-                      manualNextStop: stop.key,
-                    }))
+                    commit((current) =>
+                      selectNextStop(current, stop.key, parcel.batchId),
+                    )
                   }
                 >
                   <MapPin size={15} />

@@ -155,6 +155,28 @@ export function chosenStop(state: PrototypeState): Stop | undefined {
   return manual ?? recommendedStops(state)[0];
 }
 
+export function selectBatch(
+  state: PrototypeState,
+  batchId: string,
+): PrototypeState {
+  if (!state.batches.some((batch) => batch.id === batchId))
+    throw new Error("Weekly batch not found.");
+  return { ...state, selectedBatchId: batchId, manualNextStop: null };
+}
+
+export function selectNextStop(
+  state: PrototypeState,
+  key: string,
+  batchId = state.selectedBatchId,
+): PrototypeState {
+  const next = selectBatch(state, batchId);
+  const stop = getStops(next).find((item) => item.key === key);
+  if (!stop || !stop.parcels.some((parcel) => eligible(parcel))) {
+    throw new Error("This stop has no parcels ready for delivery.");
+  }
+  return { ...next, manualNextStop: key };
+}
+
 export function outstandingForParcel(
   state: PrototypeState,
   parcel: Parcel,

@@ -14,14 +14,57 @@ export interface AuthSession {
   expires_at: string;
 }
 
+export interface Credentials {
+  email: string;
+  password: string;
+  device_name: string;
+}
+
+export interface NewPassword {
+  password: string;
+  password_confirmation: string;
+}
+
 export class ApiError extends Error {
+  readonly status: number;
+  readonly errors: Record<string, string[]>;
+
   constructor(
     message: string,
-    public readonly status: number,
-    public readonly errors: Record<string, string[]> = {},
+    status: number,
+    errors: Record<string, string[]> = {},
   ) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.errors = errors;
+  }
+}
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function errorMessage(
+  error: unknown,
+  fallback = "Unable to complete this request.",
+): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export function workspacePath(value: string | null): string {
+  const base = "https://hatid.invalid";
+  try {
+    const url = new URL(value ?? "/dashboard", base);
+    const authPage =
+      /^\/(login|signup|forgot-password|reset-password|welcome)(\/|$)/.test(
+        decodeURIComponent(url.pathname),
+      );
+    return url.origin === base && url.pathname !== "/" && !authPage
+      ? url.pathname + url.search + url.hash
+      : "/dashboard";
+  } catch {
+    return "/dashboard";
   }
 }
 
@@ -36,46 +79,81 @@ export async function apiRequest<T>(
   data?: unknown,
   token?: string,
 ): Promise<T> {
-  const response = await fetch(`${API_URL}/api/v1${path}`, {
-    method,
-    credentials: "omit",
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
-  if (response.status === 204) return undefined as T;
-  const payload = await response.json();
-  if (!response.ok)
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/v1${path}`, {
+      method,
+      credentials: "omit",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        Accept: "application/json",
+        ...(data !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: data !== undefined ? JSON.stringify(data) : undefined,
+    });
+  } catch {
     throw new ApiError(
-      payload.message ?? "Unable to complete this request.",
+      "Couldn’t reach Hatid. Check your connection and try again.",
+      0,
+    );
+  }
+
+  if (response.status === 204) return undefined as T;
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const errors: Record<string, string[]> = {};
+    if (payload?.errors && typeof payload.errors === "object") {
+      for (const [field, messages] of Object.entries(payload.errors)) {
+        if (Array.isArray(messages)) {
+          errors[field] = messages.filter(
+            (message): message is string => typeof message === "string",
+          );
+        }
+      }
+    }
+    const message =
+      response.status >= 500
+        ? "Hatid is temporarily unavailable. Please try again."
+        : typeof payload?.message === "string"
+          ? payload.message
+          : "Unable to complete this request.";
+    throw new ApiError(message, response.status, errors);
+  }
+
+  if (payload === null)
+    throw new ApiError(
+      "Hatid returned an unreadable response. Please try again.",
       response.status,
-      payload.errors ?? {},
     );
   return payload as T;
 }
 
 export const authApi = {
-  login: (data: { email: string; password: string; device_name: string }) =>
-    apiRequest<{ data: AuthSession }>("/auth/login", "POST", data),
-  register: (data: {
-    name: string;
-    email: string;
-    password: string;
-    password_confirmation: string;
-    device_name: string;
-  }) => apiRequest<{ data: AuthSession }>("/auth/register", "POST", data),
+  login: (data: Credentials) =>
+    apiRequest<{ data: AuthSession }>("/auth/login", "POST", {
+      ...data,
+      email: normalizeEmail(data.email),
+    }),
+  register: (data: Credentials & NewPassword & { name: string }) =>
+    apiRequest<{ data: AuthSession }>("/auth/register", "POST", {
+      ...data,
+      name: data.name.trim(),
+      email: normalizeEmail(data.email),
+    }),
+  me: (token: string) =>
+    apiRequest<{ data: ApiUser }>("/auth/me", "GET", undefined, token),
   forgotPassword: (email: string) =>
-    apiRequest<{ message: string }>("/auth/forgot-password", "POST", { email }),
-  resetPassword: (data: {
-    email: string;
-    token: string;
-    password: string;
-    password_confirmation: string;
-  }) => apiRequest<{ message: string }>("/auth/reset-password", "POST", data),
+    apiRequest<{ message: string }>("/auth/forgot-password", "POST", {
+      email: normalizeEmail(email),
+    }),
+  resetPassword: (data: NewPassword & { email: string; token: string }) =>
+    apiRequest<{ message: string }>("/auth/reset-password", "POST", {
+      ...data,
+      email: normalizeEmail(data.email),
+    }),
   logout: (token: string) =>
     apiRequest<void>("/auth/logout", "POST", undefined, token),
 };

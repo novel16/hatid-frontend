@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, ListFilter, Plus, Search } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
-import { getStops, money } from "@/lib/prototype/domain";
+import { getStops, money, selectBatch } from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
   Badge,
@@ -171,11 +171,7 @@ function DeliveriesContent({ initialSearch }: { initialSearch: string }) {
               aria-label="Select weekly batch"
               value={state.selectedBatchId}
               onChange={(event) =>
-                commit((current) => ({
-                  ...current,
-                  selectedBatchId: event.target.value,
-                  manualNextStop: null,
-                }))
+                commit((current) => selectBatch(current, event.target.value))
               }
             >
               {state.batches.map((batch) => (

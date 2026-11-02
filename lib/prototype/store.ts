@@ -90,10 +90,7 @@ export const prototypeStore = {
 
 export function usePrototypeState(): PrototypeState {
   return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    subscribe,
     () => snapshot,
     () => initialState,
   );

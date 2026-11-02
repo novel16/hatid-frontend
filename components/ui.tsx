@@ -5,13 +5,54 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type ComponentProps,
+  type InputHTMLAttributes,
   type ReactNode,
 } from "react";
-import { ArrowRight, Check, PackageOpen, X } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Eye,
+  EyeOff,
+  Package,
+  PackageOpen,
+  X,
+} from "lucide-react";
 import { initials } from "@/lib/prototype/domain";
 import type { ParcelStatus } from "@/lib/prototype/types";
+
+export function Brand({ light = false }: { light?: boolean }) {
+  return (
+    <span className={`brand ${light ? "brand-light" : ""}`}>
+      <span className="brand-mark">
+        <Package size={23} strokeWidth={1.8} />
+      </span>
+      <span>
+        hatid<span className="brand-period">.</span>
+      </span>
+    </span>
+  );
+}
+
+export function PasswordInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="password-input">
+      <input {...props} type={visible ? "text" : "password"} />
+      <button
+        type="button"
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        onClick={() => setVisible((value) => !value)}
+        disabled={props.disabled}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+}
 
 export function Button({
   variant = "primary",
@@ -250,11 +291,13 @@ export function Modal({
 export function Field({
   label,
   hint,
+  error,
   children,
   required = false,
 }: {
   label: string;
   hint?: string;
+  error?: string;
   children: ReactNode;
   required?: boolean;
 }) {
@@ -266,6 +309,7 @@ export function Field({
       </span>
       {children}
       {hint && <small>{hint}</small>}
+      {error && <small className="field-error">{error}</small>}
     </label>
   );
 }

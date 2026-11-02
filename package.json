@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test lib/prototype/domain.test.ts",
+    "test": "node --test lib/api.test.ts lib/prototype/domain.test.ts",
     "format": "prettier --write app components features lib",
     "format:check": "prettier --check app components features lib"
   },

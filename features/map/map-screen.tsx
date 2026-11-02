@@ -19,6 +19,7 @@ import {
   eligible,
   money,
   recommendedStops,
+  selectNextStop,
 } from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
@@ -75,7 +76,7 @@ export function MapScreen() {
             stops={mapStops}
             selectedKey={stop?.key}
             onSelect={(entry) => {
-              commit((current) => ({ ...current, manualNextStop: entry.key }));
+              commit((current) => selectNextStop(current, entry.key));
               setNavigating(false);
               setTurn(0);
             }}
@@ -240,10 +241,7 @@ export function MapScreen() {
                 key={entry.key}
                 className={entry.key === stop?.key ? "candidate-active" : ""}
                 onClick={() => {
-                  commit((current) => ({
-                    ...current,
-                    manualNextStop: entry.key,
-                  }));
+                  commit((current) => selectNextStop(current, entry.key));
                   setNavigating(false);
                   setTurn(0);
                 }}

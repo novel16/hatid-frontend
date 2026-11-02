@@ -13,12 +13,47 @@ import {
   recordRemittance,
   saveAddressPin,
   saveSeller,
+  selectBatch,
+  selectNextStop,
   sellerBalance,
   totals,
 } from "./domain.ts";
 
 const fresh = () => structuredClone(initialState);
 const at = "2026-11-01T11:00:00+08:00";
+
+test("changing batch clears the previous next stop without changing parcel records", () => {
+  const state = fresh();
+  state.manualNextStop = "c1:a1";
+  const next = selectBatch(state, state.batches[1].id);
+  assert.equal(next.selectedBatchId, state.batches[1].id);
+  assert.equal(next.manualNextStop, null);
+  assert.equal(next.parcels, state.parcels);
+  assert.equal(state.manualNextStop, "c1:a1");
+  assert.throws(() => selectBatch(state, "missing"), /batch not found/);
+});
+
+test("manual next-stop selection works offline without a pin and rejects ineligible work", () => {
+  const state = fresh();
+  state.offline = true;
+  const next = selectNextStop(state, "c8:a8");
+  assert.equal(next.manualNextStop, "c8:a8");
+  assert.equal(chosenStop(next)?.customer.id, "c8");
+  const unavailable = {
+    ...state,
+    parcels: state.parcels.map((parcel) =>
+      parcel.customerId === "c8"
+        ? {
+            ...parcel,
+            status: "held" as const,
+            retryAt: "2999-01-01T00:00:00Z",
+          }
+        : parcel,
+    ),
+  };
+  assert.throws(() => selectNextStop(unavailable, "c8:a8"), /no parcels ready/);
+  assert.throws(() => selectNextStop(state, "missing"), /no parcels ready/);
+});
 
 test("a saved or corrected pin never fabricates a road estimate", () => {
   const state = fresh();
