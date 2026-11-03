@@ -41,12 +41,22 @@ export function parseMoney(value: string): number {
   return amount;
 }
 
+/** Formats centavo amounts for display throughout the rider workspace. */
 export function money(cents: number): string {
-  return new Intl.NumberFormat("en-PH", {
+  const whole = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
-  }).format(cents / 100);
+    maximumFractionDigits: 0,
+  }).format(Math.trunc(cents / 100));
+  const fraction = Math.abs(cents % 100);
+  return fraction ? whole + "." + String(fraction).padStart(2, "0") : whole;
+}
+
+/** Formats a nonnegative centavo fee for an editable decimal input without float rounding. */
+export function moneyInput(cents: number): string {
+  if (!Number.isSafeInteger(cents) || cents < 0)
+    throw new Error("Enter a valid nonnegative fee.");
+  return Math.trunc(cents / 100) + "." + String(cents % 100).padStart(2, "0");
 }
 
 export function initials(name: string): string {

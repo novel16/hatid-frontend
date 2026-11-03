@@ -8,7 +8,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Store,
   Users,
 } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
@@ -21,16 +20,36 @@ import {
   Button,
   Card,
   EmptyState,
-  Field,
   LinkButton,
   Modal,
   PageHeading,
 } from "@/components/ui";
-import { NewCustomerDialog } from "@/features/customers/customer-dialog";
+import {
+  AddressDialog,
+  CustomerDialog,
+} from "@/features/customers/customer-dialog";
 import { LocationDialog } from "@/features/customers/location-dialog";
-import { SellerDialog } from "@/features/sellers/seller-dialog";
+import {
+  SellerDialog,
+  SellerPricingGuide,
+} from "@/features/sellers/seller-dialog";
+import {
+  AccountCustomersScreen,
+  AccountSellersScreen,
+} from "./account-directory";
 
+/** Selects private API management or the explicit demo customer directory. */
 export function CustomersScreen() {
+  const { mode } = useActions();
+  return mode === "authenticated" ? (
+    <AccountCustomersScreen />
+  ) : (
+    <DemoCustomersScreen />
+  );
+}
+
+/** Preserves local sample customers and delivery/GPS review workflows in demo mode. */
+function DemoCustomersScreen() {
   const state = usePrototypeState();
   const { commit, notify } = useActions();
   const [query, setQuery] = useState("");
@@ -174,7 +193,7 @@ export function CustomersScreen() {
           )}
         </div>
       </Card>
-      <NewCustomerDialog open={add} onClose={() => setAdd(false)} />
+      {add && <CustomerDialog open onClose={() => setAdd(false)} />}
       {selected && (
         <Modal
           open
@@ -202,58 +221,6 @@ export function CustomersScreen() {
                 Add address
               </button>
             </div>
-            {newAddress && (
-              <form
-                className="inset-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const values = new FormData(event.currentTarget);
-                  const address: Address = {
-                    id: crypto.randomUUID(),
-                    label: String(values.get("label")).trim(),
-                    text:
-                      String(values.get("text")).trim() ||
-                      "Address not provided",
-                    latitude: null,
-                    longitude: null,
-                    distanceKm: 0,
-                    minutes: 0,
-                  };
-                  commit(
-                    (current) => ({
-                      ...current,
-                      customers: current.customers.map((customer) =>
-                        customer.id !== selected.id
-                          ? customer
-                          : {
-                              ...customer,
-                              addresses: [...customer.addresses, address],
-                            },
-                      ),
-                    }),
-                    "New address saved separately.",
-                  );
-                  setNewAddress(false);
-                }}
-              >
-                <Field label="Address label" required>
-                  <input
-                    name="label"
-                    placeholder="e.g. Work"
-                    required
-                    maxLength={50}
-                  />
-                </Field>
-                <Field label="Address / landmark (optional)">
-                  <input
-                    name="text"
-                    maxLength={300}
-                    placeholder="Street, barangay or landmark"
-                  />
-                </Field>
-                <Button type="submit">Save address</Button>
-              </form>
-            )}
             {selected.addresses.map((address) => (
               <div className="address-card" key={address.id}>
                 <div>
@@ -324,6 +291,40 @@ export function CustomersScreen() {
           </footer>
         </Modal>
       )}
+      {/* Reuse the address form while persisting only to the explicit demo store. */}
+      {selected && newAddress && (
+        <AddressDialog
+          onClose={() => setNewAddress(false)}
+          onSave={(values) => {
+            const address: Address = {
+              id: crypto.randomUUID(),
+              label: values.label,
+              text: values.text ?? "Address not provided",
+              latitude: null,
+              longitude: null,
+              distanceKm: 0,
+              minutes: 0,
+            };
+            if (
+              !commit(
+                (current) => ({
+                  ...current,
+                  customers: current.customers.map((customer) =>
+                    customer.id === selected.id
+                      ? {
+                          ...customer,
+                          addresses: [...customer.addresses, address],
+                        }
+                      : customer,
+                  ),
+                }),
+                "New demo address saved separately.",
+              )
+            )
+              throw new Error("Unable to save the demo address.");
+          }}
+        />
+      )}
       {selected && location && (
         <LocationDialog
           customer={selected}
@@ -335,7 +336,18 @@ export function CustomersScreen() {
   );
 }
 
+/** Selects private seller preferences or the existing demo seller directory. */
 export function SellersScreen() {
+  const { mode } = useActions();
+  return mode === "authenticated" ? (
+    <AccountSellersScreen />
+  ) : (
+    <DemoSellersScreen />
+  );
+}
+
+/** Keeps sample parcel balances separate from real account seller preferences. */
+function DemoSellersScreen() {
   const state = usePrototypeState();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Seller | "new" | null>(null);
@@ -356,18 +368,7 @@ export function SellersScreen() {
           Add seller
         </Button>
       </PageHeading>
-      <div className="seller-guide-banner">
-        <span>
-          <Store size={23} />
-        </span>
-        <div>
-          <h3>Included or excluded? Set it once, review it on every parcel.</h3>
-          <p>
-            Included ₱115 with a ₱15 fee → collect ₱115, seller gets ₱100.
-            Excluded ₱100 + ₱15 → the same ₱115 customer total.
-          </p>
-        </div>
-      </div>
+      <SellerPricingGuide />
       <div className="directory-toolbar">
         <div className="input-with-icon">
           <Search size={17} />

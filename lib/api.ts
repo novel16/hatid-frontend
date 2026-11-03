@@ -25,6 +25,71 @@ export interface NewPassword {
   password_confirmation: string;
 }
 
+export type DirectoryKind = "customers" | "sellers";
+export type AuthenticatedRequest = <T>(
+  path: string,
+  method?: string,
+  data?: unknown,
+) => Promise<T>;
+
+export interface ApiAddress {
+  id: number;
+  label: string;
+  text: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  verified_at: string | null;
+  archived_at: string | null;
+}
+
+export interface ApiCustomer {
+  id: number;
+  name: string;
+  phone: string | null;
+  addresses: ApiAddress[];
+  archived_at: string | null;
+}
+
+export interface ApiSeller {
+  id: number;
+  name: string;
+  contact: string | null;
+  mode: "included" | "excluded";
+  fee: number;
+  archived_at: string | null;
+}
+
+export interface ApiPage<T> {
+  data: T[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}
+
+export interface DirectoryFilters {
+  query: string;
+  page: number;
+  archived: boolean;
+}
+
+/** Builds an encoded, private directory query shared by both management screens. */
+export function directoryPath(
+  kind: DirectoryKind,
+  filters: DirectoryFilters,
+): string {
+  const params = new URLSearchParams({
+    page: String(filters.page),
+    per_page: "25",
+    archived: filters.archived ? "1" : "0",
+  });
+  const query = filters.query.trim();
+  if (query) params.set("q", query);
+  return `/${kind}?${params}`;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly errors: Record<string, string[]>;

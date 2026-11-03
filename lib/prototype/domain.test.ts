@@ -6,6 +6,8 @@ import {
   chosenStop,
   deliverParcels,
   eligible,
+  money,
+  moneyInput,
   parseMoney,
   priceParcel,
   recommendedStops,
@@ -21,6 +23,26 @@ import {
 
 const fresh = () => structuredClone(initialState);
 const at = "2026-11-01T11:00:00+08:00";
+
+/** Large valid fees must not silently lose a cent when displayed or edited. */
+test("money formatting preserves centavos at the safe-integer boundary", () => {
+  assert.equal(money(11500), "₱115");
+  assert.equal(money(11510), "₱115.10");
+  assert.equal(money(-1), "-₱0.01");
+  assert.equal(money(Number.MAX_SAFE_INTEGER), "₱90,071,992,547,409.91");
+});
+
+/** Input formatting must round-trip the exact fee, including zero and the maximum safe amount. */
+test("money input formatting round-trips integer centavos without coercion", () => {
+  assert.equal(moneyInput(0), "0.00");
+  assert.equal(moneyInput(1500), "15.00");
+  assert.equal(moneyInput(Number.MAX_SAFE_INTEGER), "90071992547409.91");
+  assert.equal(
+    parseMoney(moneyInput(Number.MAX_SAFE_INTEGER)),
+    Number.MAX_SAFE_INTEGER,
+  );
+  assert.throws(() => moneyInput(-1));
+});
 
 test("changing batch clears the previous next stop without changing parcel records", () => {
   const state = fresh();

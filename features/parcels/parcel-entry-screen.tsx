@@ -18,6 +18,7 @@ import { usePrototypeState } from "@/lib/prototype/store";
 import {
   addParcel,
   money,
+  moneyInput,
   parseMoney,
   priceParcel,
 } from "@/lib/prototype/domain";
@@ -41,6 +42,7 @@ import {
 import { CustomerPicker } from "@/features/customers/customer-dialog";
 import { SellerDialog } from "@/features/sellers/seller-dialog";
 
+/** Encodes demo parcels with frozen pricing while reusing customer/seller forms. */
 export function ParcelEntryScreen() {
   const state = usePrototypeState();
   const { commit, notify } = useActions();
@@ -51,7 +53,7 @@ export function ParcelEntryScreen() {
   const [sellerId, setSellerId] = useState(state.sellers[0]?.id ?? "");
   const [batchId, setBatchId] = useState(state.selectedBatchId);
   const [quote, setQuote] = useState("115");
-  const [fee, setFee] = useState(String((state.sellers[0]?.fee ?? 1500) / 100));
+  const [fee, setFee] = useState(moneyInput(state.sellers[0]?.fee ?? 1500));
   const [mode, setMode] = useState<FeeMode>(
     state.sellers[0]?.mode ?? "included",
   );
@@ -123,7 +125,7 @@ export function ParcelEntryScreen() {
     if (chosen) {
       setSellerId(id);
       setMode(chosen.mode);
-      setFee(String(chosen.fee / 100));
+      setFee(moneyInput(chosen.fee));
       setOverride(false);
     }
   }
@@ -317,7 +319,7 @@ export function ParcelEntryScreen() {
                   setOverride(value);
                   if (!value && seller) {
                     setMode(seller.mode);
-                    setFee(String(seller.fee / 100));
+                    setFee(moneyInput(seller.fee));
                   }
                 }}
               >
@@ -500,7 +502,7 @@ export function ParcelEntryScreen() {
           onSaved={(entry) => {
             setSellerId(entry.id);
             setMode(entry.mode);
-            setFee(String(entry.fee / 100));
+            setFee(moneyInput(entry.fee));
             setOverride(false);
           }}
         />

@@ -7,16 +7,16 @@ A responsive, clickable rider prototype for mobile and desktop. Built with Next.
 ```bash
 cd /home/novel/projects/hatid/frontend
 npm install
-npm run dev -- --port 3000
+npm run dev
 ```
 
-Open http://localhost:3000. The API should be running through Sail at http://localhost. Copy .env.example to .env.local only when changing NEXT_PUBLIC_API_URL; the development fallback is http://localhost.
+Open http://localhost:3011. Both dev and start scripts use port 3011; the separate admin uses port 3012. The API should be running through Sail at http://localhost. Copy .env.example to .env.local only when changing NEXT_PUBLIC_API_URL; the development fallback is http://localhost.
 
 For a production preview, stop the development server before running:
 
 ```bash
 npm run build
-npm run start -- --port 3000
+npm run start
 ```
 
 ## What is connected
@@ -25,7 +25,9 @@ Login, rider registration, current-user verification, password recovery/reset, p
 
 The root opens sign-in. Workspace pages require a verified rider session or explicit Try the interactive prototype / tour entry. A safe internal return path takes you back to the requested page. Demo access is also in memory; after a full refresh choose demo again. Client navigation guards control the UI; Laravel enforces real API authorization.
 
-Business screens use clearly labelled sample records in browser localStorage. Demo records remain available after signing out and entering demo again. No parcel, delivery or remittance business endpoint exists yet. The actual account name/email come from the API and are not copied into local demo settings. Settings distinguishes the demo workspace profile from the connected account and includes Reset demo data.
+Authenticated Customers and Sellers now use the private rider directory API, with search, pagination, create/edit and archive/restore. Customer addresses are managed independently. These account records stay out of demo localStorage; directory writes require connectivity. GPS fields are read-only here until a real successful-delivery flow can authorize saving a location.
+
+Other business screens, including parcel customer/seller pickers, use clearly labelled sample records in browser localStorage. Explicit demo mode keeps the sample directory as well. Demo records remain available after signing out and entering demo again. No parcel, delivery or remittance business endpoint exists yet. The actual account name/email come from the API and are not copied into local demo settings. Settings distinguishes the demo workspace profile from the connected account and includes Reset demo data.
 
 Collections record manual cash/GCash receipts. GCash happens in the rider's external account; Hatid does not verify or transfer money. Contact actions display a prototype preview rather than sending messages or making calls.
 
@@ -52,12 +54,16 @@ The fixture is a fixed sample week (26 October–1 November 2026). Recorded prot
 - app/: route entries and layouts.
 - components/: shared controls, native modal, navigation, map and delivery components.
 - features/: screens grouped by workflow.
-- lib/api.ts: typed real authentication API client.
+- lib/api.ts: typed real authentication/directory API client, resource contracts and encoded listing queries.
 - lib/prototype/: typed models, fixtures, pure domain functions and persistent demo store.
 
 UI components call domain functions instead of recalculating financial rules. Money uses integer centavos. Delivered receipts and remittance allocations are immutable; operation IDs prevent replayed operations from duplicating money.
 
 Read authentication in this order: lib/api.ts (normalization, transport, errors and endpoint calls), components/providers.tsx (session lifecycle and WorkspaceAccess), features/auth/auth-screen.tsx (forms), components/ui.tsx (shared Brand/PasswordInput/Field), then features/settings/workspace-settings.tsx (account actions). Passwords are sent unchanged; only email and account-name inputs are normalized.
+
+Read the directory in this order: app/(workspace)/customers/page.tsx or sellers/page.tsx, features/people/people-screen.tsx (account/demo entry), features/people/account-directory.tsx (management views), features/people/use-directory.ts (shared server list/search/pagination), then lib/api.ts and the existing customer-dialog.tsx / seller-dialog.tsx. The provider's protected request owns session expiry and Bearer errors. Only account-directory.tsx and use-directory.ts are new source files for this stage; the shared Modal and feature forms are reused. CustomerDialog and SellerDialog accept API save callbacks and retain their explicit demo save path. AddressDialog lives in the existing customer form file and is reused by both directories. SellerPricingGuide is shared from the existing seller file.
+
+Example review: Add customer submits name, optional phone and initial address; Laravel validates and assigns the authenticated owner, then returns a controlled customer resource. A successful save reloads the listing. Duplicate phone errors stay in the form, foreign IDs return 404 and authentication failures end the session. Archive is reversible; restoring a customer does not restore addresses archived separately. Seller fees use integer centavos in the API and exact decimal text in inputs; selecting an included/excluded mode is required.
 
 The prototype reuses selectBatch() and selectNextStop() in lib/prototype/domain.ts across the dashboard, batch list, deliveries and map. Selecting a stop checks eligibility, supports unknown pins/offline manual selection, and sets the appropriate batch. Shared controls and related one-use helpers remain in existing files; framework route entries retain their page metadata.
 
@@ -71,7 +77,9 @@ npm run format:check
 npm run build
 ```
 
-The 29 tests cover 16 prototype-domain cases and 13 API-client cases. These include pricing, partial delivery, replay protection, unknown locations, GPS confirmation, five-candidate routing, holds, partial remittance, batch/stop selection, normalization without altering passwords, Bearer headers, cookie omission, API errors and safe return paths. Node 24 runs these TypeScript tests directly; no extra test framework is installed.
+The 33 tests cover 18 prototype-domain cases and 15 API-client cases. These include pricing, partial delivery, replay protection, unknown locations, GPS confirmation, five-candidate routing, holds, partial remittance, batch/stop selection, normalization without altering passwords, Bearer headers, cookie omission, API errors, safe return paths, encoded directory search and exact centavo formatting/input round-trips. Node 24 runs these TypeScript tests directly; no extra test framework is installed.
+
+Directory stage verified on 3 November: all 33 tests, fresh TypeScript, zero-warning lint, whole-source formatting and production build passed. The build generated 25 static pages/route shells. Browser review covered desktop 1440x1000 and mobile 390x844: private empty directory, customer create/edit and formatted-phone search, duplicate-phone errors preserving inputs, separate address add/edit/archive/restore, parent archive/restore preserving independent address archives, explicit seller mode, included/excluded fee previews, exact PHP 17.50 edit, seller search/archive/restore, and customer persistence after re-login. A separate rider could not read/edit/search the other account's records through live MySQL API requests. Signing out and entering demo showed the original sample customers/sellers and prices with no QA records. The production browser console had no errors/warnings. QA users/records/tokens were removed, the task-owned production preview stopped and ports 3011/3012 verified free. The user can run npm run dev again.
 
 Verified on 2 November 2026 after normalization: all 29 tests, lint with zero warnings, TypeScript, formatting, production build and git diff --check passed. Browser review verified mobile/desktop layout, guarded delivery links, explicit demo entry with return navigation, demo exit and incomplete reset-link handling. Live browser login with an uppercase email verified the rider through the API and returned to the requested delivery; settings showed the real account. Browser logout reduced its active server tokens from one to zero. The disposable local QA account was then removed, with no remaining QA tokens. All four auth pages also passed the native POST/pre-hydration submission check. The final production preview was checked on desktop and mobile with no console errors. Earlier prototype checks covered partial delivery, unknown-location GCash delivery with GPS skip, customer search, pricing preview, navigation and remittance acknowledgement.
 

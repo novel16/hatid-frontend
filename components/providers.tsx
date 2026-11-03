@@ -21,9 +21,12 @@ import {
   type ApiUser,
   type AuthSession,
   type NewPassword,
+  type AuthenticatedRequest,
 } from "@/lib/api";
 
 interface AppActions {
+  /** Reuses Bearer transport and the existing expired/forbidden-session handling. */
+  request: AuthenticatedRequest;
   notify: (message: string, error?: boolean) => void;
   commit: (
     action: (state: PrototypeState) => PrototypeState,
@@ -89,6 +92,7 @@ export function Providers({ children }: { children: ReactNode }) {
     setDemo(false);
   }, []);
 
+  /** Sends protected API calls and clears invalid sessions without touching demo records. */
   const request = useCallback(
     async <T,>(path: string, method = "GET", data?: unknown): Promise<T> => {
       if (!session) throw new ApiError("Sign in to continue.", 401);
@@ -206,6 +210,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ActionsContext
       value={{
+        request,
         notify,
         commit,
         session,

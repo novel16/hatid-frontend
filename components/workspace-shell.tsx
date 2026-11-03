@@ -43,21 +43,28 @@ const links = [
   },
 ];
 
+/** Shares responsive navigation while clearly identifying real directories versus demo workflows. */
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
   const riderName = session?.user.name ?? state.settings.riderName;
   const searchRef = useRef<HTMLInputElement>(null);
   const path = usePathname();
+  const accountDirectory =
+    !!session && (path === "/customers" || path === "/sellers");
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState("");
   useEffect(() => {
+    /** Focuses the visible account search or the existing demo global search. */
     function focusSearch(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        searchRef.current?.focus();
+        const target =
+          searchRef.current ??
+          document.querySelector<HTMLInputElement>("[data-directory-search]");
+        target?.focus();
       }
     }
     document.addEventListener("keydown", focusSearch);
@@ -176,68 +183,77 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               <Menu size={22} />
             </button>
             <span className="breadcrumb">
-              Prototype <ChevronRight size={13} />
+              {accountDirectory ? "Account" : "Prototype"}{" "}
+              <ChevronRight size={13} />
               <strong>{current}</strong>
             </span>
           </div>
-          <form
-            className="global-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              router.push(`/deliveries?search=${encodeURIComponent(query)}`);
-              setQuery("");
-            }}
-          >
-            <Search size={17} />
-            <input
-              ref={searchRef}
-              aria-label="Search customers or deliveries"
-              placeholder="Search anything..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <kbd>Ctrl K</kbd>
-            {matches.length > 0 && (
-              <div className="search-suggestions">
-                {matches.map((customer) => {
-                  const parcel = state.parcels.find(
-                    (item) => item.customerId === customer.id,
-                  );
-                  return (
-                    <Link
-                      key={customer.id}
-                      href={parcel ? `/deliveries/${parcel.id}` : "/customers"}
-                      onClick={() => setQuery("")}
-                    >
-                      <Avatar
-                        name={customer.name}
-                        color={customer.color}
-                        small
-                      />
-                      <span>
-                        <strong>{customer.name}</strong>
-                        <small>{customer.addresses[0]?.text}</small>
-                      </span>
-                      <ChevronRight size={15} />
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </form>
-          <div className="topbar-actions">
-            <Link
-              href="/sync"
-              className={`sync-status ${state.offline ? "is-offline" : ""}`}
-              title="Open sync status"
+          {!accountDirectory && (
+            <form
+              className="global-search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                router.push(`/deliveries?search=${encodeURIComponent(query)}`);
+                setQuery("");
+              }}
             >
-              {state.offline ? (
-                <CloudOff size={16} />
-              ) : (
-                <CloudCheck size={16} />
+              <Search size={17} />
+              <input
+                ref={searchRef}
+                aria-label="Search customers or deliveries"
+                placeholder="Search anything..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <kbd>Ctrl K</kbd>
+              {matches.length > 0 && (
+                <div className="search-suggestions">
+                  {matches.map((customer) => {
+                    const parcel = state.parcels.find(
+                      (item) => item.customerId === customer.id,
+                    );
+                    return (
+                      <Link
+                        key={customer.id}
+                        href={
+                          parcel ? `/deliveries/${parcel.id}` : "/customers"
+                        }
+                        onClick={() => setQuery("")}
+                      >
+                        <Avatar
+                          name={customer.name}
+                          color={customer.color}
+                          small
+                        />
+                        <span>
+                          <strong>{customer.name}</strong>
+                          <small>{customer.addresses[0]?.text}</small>
+                        </span>
+                        <ChevronRight size={15} />
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-              <span>{state.offline ? "Offline" : "All changes saved"}</span>
-            </Link>
+            </form>
+          )}
+          <div className="topbar-actions">
+            {accountDirectory ? (
+              <Badge tone="green">Private directory</Badge>
+            ) : (
+              <Link
+                href="/sync"
+                className={`sync-status ${state.offline ? "is-offline" : ""}`}
+                title="Open sync status"
+              >
+                {state.offline ? (
+                  <CloudOff size={16} />
+                ) : (
+                  <CloudCheck size={16} />
+                )}
+                <span>{state.offline ? "Offline" : "All changes saved"}</span>
+              </Link>
+            )}
             <Link
               className="icon-button notification-button"
               href="/notifications"
@@ -256,7 +272,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main id="main-content" className="page-content">
-          {state.offline && (
+          {state.offline && !accountDirectory && (
             <div className="offline-banner">
               <CloudOff size={17} />
               <span>You’re offline. Changes stay on this device.</span>
@@ -269,7 +285,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           {children}
           <footer className="workspace-footer">
             <span>Made for the way you deliver.</span>
-            <Badge tone="green">Interactive prototype · sample data</Badge>
+            <Badge tone="green">
+              {accountDirectory
+                ? "Private directory · saved in your account"
+                : "Interactive prototype · sample data"}
+            </Badge>
             <Link href="/welcome">
               Take a quick tour
               <ArrowUpRight size={12} />

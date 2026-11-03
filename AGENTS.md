@@ -10,6 +10,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Hatid client standards
 
+- Local port is 3011 for both npm run dev and npm run start; the sibling admin uses 3012. Keep API CORS/client URLs aligned with these ports.
+- Before handing server startup back to the user, stop any task-owned preview occupying this app's port and verify the port is free. Leave user-owned or unrelated processes untouched. Only one dev/start process can listen on this app's port at a time.
 - Keep this rider app responsive on mobile and desktop. Admin is a separate sibling app.
 - Use shared controls/tokens and feature folders; keep route entries small.
 - The user is learning and wants fewer, easier-to-review files. Prefer cohesive feature files and reuse existing components. Keep one-use components/dialogs/helpers beside their screen unless size, responsibility or real reuse justifies extraction; avoid splitting every small JSX block into another file.
@@ -22,6 +24,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Reuse Brand/PasswordInput from ui.tsx and selectBatch/selectNextStop from the existing prototype domain. Framework page files retain metadata. The only new test module in this stage is lib/api.test.ts; npm test runs it and the domain tests with Node 24.
 - Credential forms use native POST and auth submission stays disabled until hydration attaches the client handler. Never allow credentials to fall back to a URL query. The user also added Superpowers; use its relevant debugging/verification workflows alongside Ponytail.
 - Business data, schematic maps, road estimates and offline synchronization are prototype-only until real APIs are implemented. Label them honestly.
+- The customer/seller feature now connects authenticated /customers and /sellers management to the private rider API. Reuse the protected request, shared directory hook and existing customer/seller/address forms; do not copy account records into demo localStorage. Explicit demo mode and parcel pickers remain sample workflows until parcel APIs exist. Directory GPS is read-only, and real directory writes require connectivity.
 - GCash is external and manually confirmed. Do not add gateway verification, wallet balances or transfers.
 - Deliveries can be partial per parcel. Saving GPS is optional after successful delivery, with explicit review/confirmation; skipping preserves payment.
 - Compare at most five eligible routing candidates and retain manual override, including unknown locations.
@@ -43,3 +46,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Use one shared Modal shell within this app for common dialog layout, opening/closing, backdrop and keyboard/focus accessibility. Compose each page's title, content and actions through simple props and children; reuse that shell in feature-specific dialogs.
 - Keep feature-specific form content, state, validation and submission behaviour with the feature, composed inside shared UI. Extract repeated logic into small helpers or hooks when there is real reuse.
 - Keep component APIs focused and readable. Add only variants required by actual screens; avoid a universal component with many unrelated flags or business rules.
+
+## Device resource limits
+
+- The user's device has 8 GB RAM and an 11th-generation Intel Core i5. Run tests, builds and page compilation sequentially, with only one heavy operation active at a time. Never launch multiple suites/builds/compilers together.
+- Keep checks focused on the change, and do not repeat passing suites without a new reason. Start the Next.js apps one at a time; reuse an existing valid production build for previews when possible.
+- If a task-owned process stalls, stop it safely before trying another heavy operation. Preserve unrelated processes and follow the project runtime rules for any WSL/Docker recovery.

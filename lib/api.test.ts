@@ -1,8 +1,41 @@
 import assert from "node:assert/strict";
 import test, { afterEach, mock } from "node:test";
-import { ApiError, apiRequest, authApi, workspacePath } from "./api.ts";
+import {
+  ApiError,
+  apiRequest,
+  authApi,
+  directoryPath,
+  workspacePath,
+} from "./api.ts";
 
 afterEach(() => mock.restoreAll());
+
+/** Search text must not become extra URL parameters or change the selected archive filter. */
+test("directory search encodes special characters without overriding pagination or status", () => {
+  const path = directoryPath("customers", {
+    query: "  Ana & archived=1 + ?  ",
+    page: 2,
+    archived: false,
+  });
+  const url = new URL(path, "https://hatid.invalid");
+  assert.equal(url.pathname, "/customers");
+  assert.equal(url.searchParams.get("q"), "Ana & archived=1 + ?");
+  assert.equal(url.searchParams.get("page"), "2");
+  assert.equal(url.searchParams.get("archived"), "0");
+  assert.equal(url.searchParams.getAll("archived").length, 1);
+});
+
+/** Blank searches should return all records in the requested active/archived directory. */
+test("directory queries omit blank searches and preserve the requested resource", () => {
+  const url = new URL(
+    directoryPath("sellers", { query: "   ", page: 1, archived: true }),
+    "https://hatid.invalid",
+  );
+  assert.equal(url.pathname, "/sellers");
+  assert.equal(url.searchParams.has("q"), false);
+  assert.equal(url.searchParams.get("archived"), "1");
+  assert.equal(url.searchParams.get("per_page"), "25");
+});
 
 const credentials = {
   email: "  RIDER@EXAMPLE.TEST ",
