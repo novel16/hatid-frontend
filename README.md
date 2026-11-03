@@ -2,15 +2,15 @@
 
 A responsive, clickable rider prototype for mobile and desktop. Built with Next.js 16.4.3, React 19.3, TypeScript, Manrope and shared forest/mint design tokens.
 
-## Run in WSL Ubuntu
+## Run in Windows / Git Bash
 
 ```bash
-cd /home/novel/projects/hatid/frontend
-npm install
-npm run dev -- --port 3000
+cd "/c/Users/Novel/Desktop/laravel projects/hatid/frontend"
+npm ci
+npm run dev
 ```
 
-Open http://localhost:3000. The API should be running through Sail at http://localhost. Copy .env.example to .env.local only when changing NEXT_PUBLIC_API_URL; the development fallback is http://localhost.
+Run npm ci for initial dependency setup or after copying from another operating system; normal startup only needs npm run dev. Open http://localhost:3011. Both dev and start scripts use port3011; the separate admin uses3012. The native API runs at http://127.0.0.1:8000. Copy .env.example to .env.local for that NEXT_PUBLIC_API_URL; the generic transport fallback is http://localhost. The Windows SWC/Tailwind/Lightning CSS bindings and next.cmd were restored from the existing lockfile during the3 November repair. Avoid starting a duplicate dev server when the VS Code terminal is already running it.
 
 For a production preview, stop the development server before running:
 
@@ -21,7 +21,7 @@ npm run start -- --port 3000
 
 ## What is connected
 
-Login, rider registration, current-user verification, password recovery/reset, password change and logout are wired to the Laravel API. Requests use Authorization: Bearer, credentials: omit and no-store, with a 15-second connection timeout. Login/register is accepted only after GET /api/v1/auth/me verifies the rider account. The access token stays in memory; a full page refresh requires signing in again. Expiry or a protected 401/403 clears the local session while preserving demo records. A successful password change signs out all devices through the API. Credential forms use native POST and auth submission stays disabled until the client handler is ready, preventing early native GET submissions. There are no seeded account credentials. Admin sign-in belongs to the separate admin application.
+Login, rider registration, current-user verification, password recovery/reset, password change and logout are wired to the Laravel API. Requests use Authorization: Bearer, credentials: omit and no-store, with a 15-second connection timeout. Login/register and refresh restoration are accepted only after GET /api/v1/auth/me verifies the rider account. sessionStorage holds only access_token and expires_at for the current tab; the user comes from the API. Workspace/auth screens wait while checking. Invalid, expired, revoked or forbidden credentials are discarded; connection/server failures show Try again or Sign in again without granting workspace access. If browser storage is blocked, login still works in memory and shows a refresh-persistence warning. Logout, expiry, protected 401/403 and password change clear the tab session while preserving demo records. Tab closure removes browser storage but does not revoke the database-backed Sanctum token. sessionStorage remains JavaScript-readable and vulnerable to XSS. A successful password change signs out all devices through the API. Credential forms use native POST and auth submission stays disabled until the client handler is ready, preventing early native GET submissions. There are no seeded account credentials. Admin sign-in belongs to the separate admin application.
 
 The root opens sign-in. Workspace pages require a verified rider session or explicit Try the interactive prototype / tour entry. A safe internal return path takes you back to the requested page. Demo access is also in memory; after a full refresh choose demo again. Client navigation guards control the UI; Laravel enforces real API authorization.
 

@@ -26,7 +26,7 @@ import {
   normalizeEmail,
   workspacePath,
 } from "@/lib/api";
-import { useActions } from "@/components/providers";
+import { SessionCheck, useActions } from "@/components/providers";
 import {
   Badge,
   Brand,
@@ -46,8 +46,15 @@ const titles: Record<AuthMode, string> = {
 
 const subscribeToHydration = () => () => {};
 
+/** Render account forms after any existing tab session has been verified. */
 export function AuthScreen({ mode }: { mode: AuthMode }) {
-  const { session, signIn, signOut, enterDemo } = useActions();
+  const {
+    session,
+    mode: accessMode,
+    signIn,
+    signOut,
+    enterDemo,
+  } = useActions();
   const params = useSearchParams();
   const router = useRouter();
   const ready = useSyncExternalStore(
@@ -120,6 +127,9 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
       setBusy(false);
     }
   }
+
+  if (accessMode === "checking" || accessMode === "unavailable")
+    return <SessionCheck />;
 
   if (session && (mode === "login" || mode === "signup")) {
     return (

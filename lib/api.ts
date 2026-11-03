@@ -14,6 +14,60 @@ export interface AuthSession {
   expires_at: string;
 }
 
+export type StoredAuthSession = Pick<
+  AuthSession,
+  "access_token" | "expires_at"
+>;
+
+/** Accept only usable tab credentials; stored user identities are never trusted. */
+export function parseStoredSession(
+  value: string | null,
+): StoredAuthSession | null {
+  try {
+    const candidate = JSON.parse(value ?? "null");
+    if (
+      !candidate ||
+      typeof candidate.access_token !== "string" ||
+      !candidate.access_token ||
+      /\s/.test(candidate.access_token) ||
+      typeof candidate.expires_at !== "string" ||
+      !(Date.parse(candidate.expires_at) > Date.now())
+    )
+      return null;
+    return {
+      access_token: candidate.access_token,
+      expires_at: candidate.expires_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Login and refresh both require an unexpired token and an API-verified rider. */
+export async function verifyRiderSession(
+  candidate: StoredAuthSession,
+): Promise<AuthSession> {
+  if (!(Date.parse(candidate.expires_at) > Date.now())) {
+    throw new ApiError("Your session has expired. Sign in again.", 401);
+  }
+  const { data: user } = await authApi.me(candidate.access_token);
+  if (user.role !== "rider") {
+    throw new ApiError(
+      "This account does not have rider access. Please sign in again.",
+      403,
+    );
+  }
+  if (!(Date.parse(candidate.expires_at) > Date.now())) {
+    throw new ApiError("Your session has expired. Sign in again.", 401);
+  }
+  return {
+    access_token: candidate.access_token,
+    expires_at: candidate.expires_at,
+    token_type: "Bearer",
+    user,
+  };
+}
+
 export interface Credentials {
   email: string;
   password: string;

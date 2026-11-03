@@ -3854,6 +3854,11 @@ body:has(dialog[open]) {
   display: grid;
   gap: 20px;
 }
+.session-check {
+  width: min(100%, 400px);
+  padding: 24px;
+  text-align: center;
+}
 .page-skeleton > span {
   display: block;
   height: 130px;
