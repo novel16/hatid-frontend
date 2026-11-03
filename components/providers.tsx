@@ -18,8 +18,11 @@ import {
   apiRequest,
   authApi,
   errorMessage,
+  parseStoredSession,
+  verifyRiderSession,
   type ApiUser,
   type AuthSession,
+  type StoredAuthSession,
   type NewPassword,
 } from "@/lib/api";
 
@@ -30,7 +33,8 @@ interface AppActions {
     message?: string,
   ) => boolean;
   session: AuthSession | null;
-  mode: "guest" | "demo" | "authenticated";
+  mode: "checking" | "unavailable" | "guest" | "demo" | "authenticated";
+  restoreSession: () => Promise<void>;
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
   enterDemo: () => void;
@@ -40,7 +44,28 @@ interface AppActions {
 }
 
 const ActionsContext = createContext<AppActions | null>(null);
+const SESSION_KEY = "hatid.auth.v1";
 
+/** Persist only tab credentials; clearing first prevents an old account surviving a failed write. */
+function saveTabSession(session: StoredAuthSession | null): boolean {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+    if (session) {
+      sessionStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({
+          access_token: session.access_token,
+          expires_at: session.expires_at,
+        }),
+      );
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Own the verified rider session, refresh restoration and separate demo access. */
 export function Providers({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<{
     id: string;
@@ -49,6 +74,9 @@ export function Providers({ children }: { children: ReactNode }) {
   } | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [demo, setDemo] = useState(false);
+  const [restoreState, setRestoreState] = useState<
+    "checking" | "ready" | "unavailable"
+  >("checking");
   const authVersion = useRef(0);
 
   const notify = useCallback((message: string, error = false) => {
@@ -60,34 +88,77 @@ export function Providers({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  /** End account/demo access and cancel any older verification before clearing the tab token. */
   const endSession = useCallback(
     (message?: string) => {
       authVersion.current += 1;
       setSession(null);
       setDemo(false);
+      setRestoreState("ready");
+      saveTabSession(null);
       if (message) notify(message, true);
     },
     [notify],
   );
 
-  const signIn = useCallback(async (candidate: AuthSession) => {
+  /** Verify issued credentials before storing them or allowing workspace access. */
+  const signIn = useCallback(
+    async (candidate: AuthSession) => {
+      const attempt = ++authVersion.current;
+      const verified = await verifyRiderSession(candidate);
+      if (attempt !== authVersion.current) {
+        throw new ApiError("This sign-in was cancelled. Please try again.", 0);
+      }
+      if (!saveTabSession(verified)) {
+        notify(
+          "Browser storage is unavailable. Refreshing will require signing in again.",
+          true,
+        );
+      }
+      setSession(verified);
+      setDemo(false);
+      setRestoreState("ready");
+    },
+    [notify],
+  );
+
+  /** Revalidate tab credentials; connection failures keep them available for an explicit retry. */
+  const restoreSession = useCallback(async () => {
     const attempt = ++authVersion.current;
-    const { data: user } = await authApi.me(candidate.access_token);
-    if (
-      user.role !== "rider" ||
-      !(Date.parse(candidate.expires_at) > Date.now())
-    ) {
-      throw new ApiError(
-        "This rider sign-in is no longer valid. Please sign in again.",
-        401,
+    setRestoreState("checking");
+    let candidate: StoredAuthSession | null;
+    try {
+      candidate = parseStoredSession(sessionStorage.getItem(SESSION_KEY));
+    } catch {
+      setRestoreState("ready");
+      notify(
+        "Browser storage is unavailable. Refreshing will require signing in again.",
+        true,
       );
+      return;
     }
-    if (attempt !== authVersion.current) {
-      throw new ApiError("This sign-in was cancelled. Please try again.", 0);
+    if (!candidate) {
+      endSession();
+      return;
     }
-    setSession({ ...candidate, user });
-    setDemo(false);
-  }, []);
+    try {
+      const verified = await verifyRiderSession(candidate);
+      if (attempt !== authVersion.current) return;
+      setSession(verified);
+      setDemo(false);
+      setRestoreState("ready");
+    } catch (cause) {
+      if (attempt !== authVersion.current) return;
+      if (
+        cause instanceof ApiError &&
+        (cause.status === 401 || cause.status === 403)
+      ) {
+        endSession("Your session has ended. Please sign in again.");
+      } else {
+        setRestoreState("unavailable");
+      }
+    }
+  }, [endSession, notify]);
 
   const request = useCallback(
     async <T,>(path: string, method = "GET", data?: unknown): Promise<T> => {
@@ -133,11 +204,12 @@ export function Providers({ children }: { children: ReactNode }) {
     }
   }, [session, endSession, notify]);
 
+  /** Demo entry discards any unverified saved account without mixing its records with samples. */
   const enterDemo = useCallback(() => {
     if (session) return;
-    authVersion.current += 1;
+    endSession();
     setDemo(true);
-  }, [session]);
+  }, [session, endSession]);
 
   const changePassword = useCallback(
     async (data: NewPassword & { current_password: string }) => {
@@ -154,6 +226,22 @@ export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
     prototypeStore.hydrate();
   }, []);
+
+  /** Restore after mount; StrictMode/unmount cancels stale verification results. */
+  useEffect(() => {
+    const timer = setTimeout(
+      /** Defer storage access until the browser provider is mounted. */
+      () => {
+        void restoreSession();
+      },
+      0,
+    );
+    /** Prevent a pending request from restoring a session after this provider is gone. */
+    return () => {
+      clearTimeout(timer);
+      authVersion.current += 1;
+    };
+  }, [restoreSession]);
 
   useEffect(() => {
     if (!session) return;
@@ -209,7 +297,15 @@ export function Providers({ children }: { children: ReactNode }) {
         notify,
         commit,
         session,
-        mode: session ? "authenticated" : demo ? "demo" : "guest",
+        mode:
+          restoreState !== "ready"
+            ? restoreState
+            : session
+              ? "authenticated"
+              : demo
+                ? "demo"
+                : "guest",
+        restoreSession,
         signIn,
         signOut,
         enterDemo,
@@ -244,6 +340,45 @@ export function useActions(): AppActions {
   return context;
 }
 
+/** Reuse the same verification/retry screen on sign-in pages and protected deep links. */
+export function SessionCheck() {
+  const { mode, restoreSession, signOut } = useActions();
+  return (
+    <main id="main-content" className="workspace-loading">
+      {mode === "unavailable" ? (
+        <div className="form-stack session-check">
+          <h1>Check your connection</h1>
+          <p role="alert">
+            We couldn’t verify your sign-in. Reconnect, then try again.
+          </p>
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={restoreSession}
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={
+              /** Discard the unverified tab credentials and show the sign-in form. */
+              () => {
+                void signOut();
+              }
+            }
+          >
+            Sign in again
+          </button>
+        </div>
+      ) : (
+        <p role="status">Checking your sign-in…</p>
+      )}
+    </main>
+  );
+}
+
+/** Wait for verification before redirecting guests or rendering the rider workspace. */
 export function WorkspaceAccess({ children }: { children: ReactNode }) {
   const { mode } = useActions();
   const path = usePathname();
@@ -251,11 +386,13 @@ export function WorkspaceAccess({ children }: { children: ReactNode }) {
   const router = useRouter();
   const returnTo = path + (params.size ? "?" + params.toString() : "");
 
+  /** Preserve the requested page while redirecting only a confirmed guest. */
   useEffect(() => {
     if (mode === "guest")
       router.replace("/login?next=" + encodeURIComponent(returnTo));
   }, [mode, returnTo, router]);
 
+  if (mode === "checking" || mode === "unavailable") return <SessionCheck />;
   if (mode === "guest")
     return (
       <main id="main-content" className="workspace-loading">

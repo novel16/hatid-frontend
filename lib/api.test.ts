@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test, { afterEach, mock } from "node:test";
-import { ApiError, apiRequest, authApi, workspacePath } from "./api.ts";
+import {
+  ApiError,
+  apiRequest,
+  authApi,
+  directoryPath,
+  parseStoredSession,
+  verifyRiderSession,
+  workspacePath,
+} from "./api.ts";
 
 afterEach(() => mock.restoreAll());
 
@@ -42,6 +50,104 @@ function captureRequests(...responses: Response[]) {
   );
   return calls;
 }
+
+/** Stored JSON is untrusted and may retain only a usable token and its expiry. */
+test("tab session parsing rejects malformed or expired data and drops cached identity", () => {
+  const candidate = {
+    access_token: "stored-token",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  assert.deepEqual(
+    parseStoredSession(
+      JSON.stringify({ ...candidate, user, password: "secret" }),
+    ),
+    candidate,
+  );
+  for (const value of [
+    null,
+    "bad json",
+    "null",
+    "[]",
+    "{}",
+    JSON.stringify({ ...candidate, access_token: "" }),
+    JSON.stringify({ ...candidate, access_token: "token\r\nInjected" }),
+    JSON.stringify({ ...candidate, expires_at: 123 }),
+    JSON.stringify({ ...candidate, expires_at: "invalid" }),
+    JSON.stringify({ ...candidate, expires_at: new Date(0).toISOString() }),
+  ]) {
+    assert.equal(parseStoredSession(value), null);
+  }
+});
+
+/** A restored account must come from the API rather than an identity in browser storage. */
+test("rider session verification reloads the user using cookie-free Bearer auth", async () => {
+  const candidate = {
+    access_token: "stored-token",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const calls = captureRequests(json({ data: user }));
+  assert.deepEqual(await verifyRiderSession(candidate), {
+    ...candidate,
+    user,
+    token_type: "Bearer",
+  });
+  assert.ok(calls[0].url.endsWith("/auth/me"));
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(
+    new Headers(calls[0].options.headers).get("Authorization"),
+    "Bearer stored-token",
+  );
+});
+
+/** Expired tokens must not trigger account requests or grant a workspace session. */
+test("expired sessions are rejected before contacting the API", async () => {
+  const calls = captureRequests();
+  await assert.rejects(
+    verifyRiderSession({
+      access_token: "expired",
+      expires_at: new Date(0).toISOString(),
+    }),
+    /** The provider uses 401 to discard expired tab credentials. */
+    (cause: unknown) => cause instanceof ApiError && cause.status === 401,
+  );
+  assert.equal(calls.length, 0);
+});
+
+/** Admin credentials must never restore access to the rider application. */
+test("a verified admin account is rejected by the rider session helper", async () => {
+  captureRequests(json({ data: { ...user, role: "admin" } }));
+  await assert.rejects(
+    verifyRiderSession({
+      access_token: "admin",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }),
+    /** Forbidden credentials are discarded rather than treated as a connection failure. */
+    (cause: unknown) => cause instanceof ApiError && cause.status === 403,
+  );
+});
+
+/** Revocation and connectivity stay distinct so the provider can clear or retry appropriately. */
+test("session verification preserves invalid-token and connection failure status", async () => {
+  const candidate = {
+    access_token: "stored-token",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  captureRequests(json({ message: "Unauthenticated." }, 401));
+  await assert.rejects(
+    verifyRiderSession(candidate),
+    /** An API rejection requires a fresh sign-in. */
+    (cause: unknown) => cause instanceof ApiError && cause.status === 401,
+  );
+  /** Simulate an unavailable API without accepting cached user details. */
+  mock.method(globalThis, "fetch", async () => {
+    throw new TypeError("Failed to fetch");
+  });
+  await assert.rejects(
+    verifyRiderSession(candidate),
+    /** A connection failure must remain retryable, not be mistaken for invalid credentials. */
+    (cause: unknown) => cause instanceof ApiError && cause.status === 0,
+  );
+});
 
 test("login normalizes email while preserving passwords and omitting cookies", async () => {
   const calls = captureRequests(json({ data: session }));

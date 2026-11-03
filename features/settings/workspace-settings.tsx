@@ -35,6 +35,7 @@ import {
   PasswordInput,
 } from "@/components/ui";
 
+/** Keep real account actions separate from local prototype profile and preferences. */
 export function SettingsScreen() {
   const state = usePrototypeState();
   const { commit, notify, session, signOut, changePassword } = useActions();
@@ -200,8 +201,9 @@ export function SettingsScreen() {
                   <p className="small-muted">{session.user.email}</p>
                   <p className="small-muted">
                     This sign-in lasts until{" "}
-                    {formatDate(session.expires_at, true)} or you sign out.
-                    Refreshing the page also asks you to sign in again. Demo
+                    {formatDate(session.expires_at, true)} or you sign out. This
+                    tab keeps your sign-in through refresh and checks it with
+                    Hatid again. Closing the tab ends local access. Demo
                     delivery records stay local.
                   </p>
                 </>
