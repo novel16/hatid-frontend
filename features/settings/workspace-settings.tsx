@@ -22,7 +22,12 @@ import {
 } from "lucide-react";
 import { prototypeStore, usePrototypeState } from "@/lib/prototype/store";
 import { formatDate } from "@/lib/prototype/domain";
-import { ApiError, errorMessage, type AccountPreferences } from "@/lib/api";
+import {
+  ApiError,
+  errorMessage,
+  type AccountPreferences,
+  type Vehicle,
+} from "@/lib/api";
 import { DevicesPanel } from "@/features/settings/devices-panel";
 import { useActions } from "@/components/providers";
 import {
@@ -40,6 +45,7 @@ import {
   Modal,
   PageHeading,
   PasswordInput,
+  VehicleSelect,
 } from "@/components/ui";
 
 /** Saves real account settings while keeping sample profiles and controls separate. */
@@ -89,7 +95,11 @@ export function SettingsScreen() {
     setProfileErrors({});
     try {
       if (session) {
-        await saveSettings({ name, phone: phone || null });
+        await saveSettings({
+          name,
+          phone: phone || null,
+          vehicle: String(data.get("vehicle") ?? "") as Vehicle,
+        });
         notify("Profile saved to your account.");
       } else {
         commit(
@@ -147,7 +157,7 @@ export function SettingsScreen() {
             title={session ? "Rider profile" : "Sample rider profile"}
             description={
               session
-                ? "Your name and contact number are saved to your account."
+                ? "Your name, contact number and primary vehicle are saved to your account."
                 : "Demo profile edits are saved only on this device."
             }
             action={<UserRound size={20} />}
@@ -202,6 +212,22 @@ export function SettingsScreen() {
                       maxLength={30}
                     />
                   </Field>
+                  {session && (
+                    <Field
+                      label="Primary vehicle"
+                      required
+                      error={profileErrors.vehicle?.[0]}
+                      hint="Road recommendations use this vehicle. Existing accounts must choose one."
+                    >
+                      <VehicleSelect
+                        name="vehicle"
+                        defaultValue={session.user.vehicle ?? ""}
+                        required
+                        disabled={settingsBusy}
+                        aria-invalid={!!profileErrors.vehicle}
+                      />
+                    </Field>
+                  )}
                   {session && (
                     <Field
                       label="Email address"

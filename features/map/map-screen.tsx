@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Check,
@@ -33,8 +34,23 @@ import {
 } from "@/components/ui";
 import { ChooseStopDialog } from "@/components/delivery-ui";
 import { CityMap } from "@/components/city-map";
+import { AccountMap } from "./account-map";
 
+/** Keep account mapping and labelled sample navigation in separate components/state. */
 export function MapScreen() {
+  const { session } = useActions();
+  const anchor = useSearchParams().get("parcel") ?? "";
+  return session ? (
+    <AccountMap
+      key={`${session.access_token}:${session.user.vehicle}:${anchor}`}
+    />
+  ) : (
+    <DemoMapScreen />
+  );
+}
+
+/** Preserve the existing clickable sample route without using account/provider data. */
+function DemoMapScreen() {
   const state = usePrototypeState();
   const { commit } = useActions();
   const stop = chosenStop(state);

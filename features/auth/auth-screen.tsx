@@ -25,6 +25,7 @@ import {
   errorMessage,
   normalizeEmail,
   workspacePath,
+  type Vehicle,
 } from "@/lib/api";
 import { SessionCheck, useActions } from "@/components/providers";
 import {
@@ -34,6 +35,7 @@ import {
   Field,
   LinkButton,
   PasswordInput,
+  VehicleSelect,
 } from "@/components/ui";
 
 type AuthMode = "login" | "signup" | "forgot" | "reset";
@@ -79,6 +81,7 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
       router.replace(destination);
   }, [session, mode, destination, router]);
 
+  /** Submit native form values through the shared auth transport, including explicit signup vehicle. */
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || missingResetToken) return;
@@ -115,6 +118,7 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
             ? await authApi.register({
                 ...credentials,
                 name: String(data.get("name") ?? ""),
+                vehicle: String(data.get("vehicle") ?? "") as Vehicle,
                 password_confirmation,
               })
             : await authApi.login(credentials);
@@ -293,6 +297,21 @@ export function AuthScreen({ mode }: { mode: AuthMode }) {
                   maxLength={255}
                 />
               </Field>
+              {mode === "signup" && (
+                <Field
+                  label="Primary vehicle"
+                  required
+                  error={errors.vehicle?.[0]}
+                  hint="Used for your road recommendations. You can change it in Settings."
+                >
+                  <VehicleSelect
+                    name="vehicle"
+                    defaultValue=""
+                    required
+                    aria-invalid={!!errors.vehicle}
+                  />
+                </Field>
+              )}
               {mode !== "forgot" && (
                 <Field
                   label={mode === "reset" ? "New password" : "Password"}

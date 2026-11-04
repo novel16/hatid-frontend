@@ -413,7 +413,7 @@ export const authApi = {
     }),
   /** Signup passes the rider's explicit vehicle; Laravel validates the allowed choices. */
   register: (
-    data: Credentials & NewPassword & { name: string; vehicle?: Vehicle },
+    data: Credentials & NewPassword & { name: string; vehicle: Vehicle },
   ) =>
     apiRequest<{ data: AuthSession }>("/auth/register", "POST", {
       ...data,
