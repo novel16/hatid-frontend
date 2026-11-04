@@ -121,6 +121,79 @@ export interface ApiSeller extends NewSeller {
   archived_at: string | null;
 }
 
+export interface CollectionSummary {
+  cash: number;
+  gcash: number;
+  fees: number;
+  seller_share: number;
+  remitted: number;
+  outstanding: number;
+  receipts: number;
+}
+
+export interface ApiSellerBalance extends ApiSeller {
+  balance: {
+    collected: number;
+    fees: number;
+    accrued: number;
+    remitted: number;
+    outstanding: number;
+    receipts: number;
+  };
+}
+
+export interface ApiRemittance {
+  id: number;
+  code: string;
+  seller: { id: number; name: string; archived_at: string | null };
+  amount: number;
+  method: PaymentMethod;
+  reference: string | null;
+  recorded_at: string;
+  allocation_count: number;
+}
+
+export interface NewRemittance {
+  operation_id: string;
+  seller_id: number;
+  amount: number;
+  method: PaymentMethod;
+  reference: string;
+  handover_confirmed: true;
+}
+
+export type CollectionView = "receipts" | "sellers" | "remittances";
+export interface CollectionFilters extends PaginationState {
+  query: string;
+  method: "all" | PaymentMethod;
+  balance: "all" | "outstanding" | "settled";
+}
+
+export interface CollectionPage<T> extends PaginatedResponse<T> {
+  summary: CollectionSummary;
+}
+
+/** Encodes private ledger pages while keeping receipt-method and full seller-balance scopes distinct. */
+export function collectionPath(
+  view: CollectionView,
+  filters: CollectionFilters,
+): string {
+  const paths = {
+    receipts: "/collections",
+    sellers: "/collections/sellers",
+    remittances: "/remittances",
+  };
+  const params = new URLSearchParams({
+    page: String(filters.page),
+    per_page: String(filters.perPage),
+  });
+  const query = filters.query.trim();
+  if (query) params.set("q", query);
+  if (view === "sellers") params.set("balance", filters.balance);
+  else params.set("method", filters.method);
+  return `${paths[view]}?${params}`;
+}
+
 export interface NewParcel {
   operation_id: string;
   batch_id: number;
@@ -164,6 +237,12 @@ export interface ApiParcel {
     at: string;
   }[];
   created_at: string;
+}
+
+export interface ApiCollection extends ApiParcel {
+  receipt: NonNullable<ApiParcel["receipt"]>;
+  settlement: { remitted: number; outstanding: number };
+  allocated_amount?: number;
 }
 
 export interface ApiDelivery {
@@ -285,6 +364,18 @@ export class ApiError extends Error {
     this.status = status;
     this.errors = errors;
   }
+}
+
+/** A rejected retry never resolves an earlier ambiguous save; retain its exact identity until success. */
+export function retainRemittanceOperation(
+  operation: NewRemittance | null,
+  alreadyUncertain: boolean,
+  cause: unknown,
+): NewRemittance | null {
+  return alreadyUncertain ||
+    (cause instanceof ApiError && (cause.status === 0 || cause.status >= 500))
+    ? operation
+    : null;
 }
 
 export function normalizeEmail(email: string): string {

@@ -5,6 +5,9 @@ import {
   apiRequest,
   authApi,
   directoryPath,
+  collectionPath,
+  retainRemittanceOperation,
+  type NewRemittance,
   parseStoredSession,
   verifyRiderSession,
   workspacePath,
@@ -12,6 +15,84 @@ import {
 } from "./api.ts";
 
 afterEach(() => mock.restoreAll());
+
+/** A rejected retry cannot prove an earlier ambiguous physical handover was never recorded. */
+test("ambiguous handovers retain their exact operation through rejected retries", () => {
+  const original: NewRemittance = Object.freeze({
+    operation_id: "ec0b8767-8b55-47eb-9644-3489bbfbe36b",
+    seller_id: 12,
+    amount: 6000,
+    method: "cash",
+    reference: "Partial handover",
+    handover_confirmed: true,
+  });
+  let pending: NewRemittance | null = original;
+  let uncertain = false;
+  for (const status of [0, 429, 422, 409, 503]) {
+    pending = retainRemittanceOperation(
+      pending,
+      uncertain,
+      new ApiError("Response interrupted or retry rejected.", status),
+    );
+    uncertain = pending !== null;
+    assert.equal(
+      pending,
+      original,
+      `HTTP ${status} must retain the original UUID and payload`,
+    );
+    assert.equal(
+      uncertain,
+      true,
+      `HTTP ${status} must keep editing and dismissal locked`,
+    );
+  }
+  assert.equal(
+    retainRemittanceOperation(
+      original,
+      false,
+      new ApiError("Amount exceeds balance.", 422),
+    ),
+    null,
+  );
+});
+
+/** Full ledger balances must never inherit a receipt-method filter or silently page local data. */
+test("collection URLs separate receipt, balance and handover scopes with server pagination", () => {
+  for (const view of ["receipts", "sellers", "remittances"] as const) {
+    for (const perPage of [10, 50, 100] as const) {
+      const url = new URL(
+        collectionPath(view, {
+          query: "  Shop & Co  ",
+          page: 2,
+          perPage,
+          method: "gcash",
+          balance: "outstanding",
+        }),
+        "https://hatid.invalid",
+      );
+      assert.equal(
+        url.pathname,
+        view === "receipts"
+          ? "/collections"
+          : view === "sellers"
+            ? "/collections/sellers"
+            : "/remittances",
+      );
+      assert.equal(url.searchParams.get("q"), "Shop & Co");
+      assert.equal(url.searchParams.get("page"), "2");
+      assert.equal(url.searchParams.get("per_page"), String(perPage));
+      assert.equal(
+        url.searchParams.get("method"),
+        view === "sellers" ? null : "gcash",
+      );
+      assert.equal(
+        url.searchParams.get("balance"),
+        view === "sellers" ? "outstanding" : null,
+      );
+      assert.equal(url.searchParams.has("user_id"), false);
+    }
+  }
+});
 
 /** Search encoding and selected page sizes must reach the API instead of filtering one loaded page. */
 test("customer and seller directory requests preserve server search, archive filters and page sizes", () => {

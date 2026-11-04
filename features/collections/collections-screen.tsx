@@ -40,9 +40,20 @@ import {
   PaginationEntries,
   usePagination,
 } from "@/components/pagination";
+import { AccountCollections } from "./account-collections";
 
-/** Keeps each money-record list independently paginated without changing aggregate amounts. */
+/** Real account money is never read from or committed into the explicit demo store. */
 export function CollectionsScreen() {
+  const { session } = useActions();
+  return session ? (
+    <AccountCollections key={session.user.id} />
+  ) : (
+    <DemoCollections />
+  );
+}
+
+/** Keeps each sample money-record list independently paginated without changing aggregate amounts. */
+function DemoCollections() {
   const state = usePrototypeState();
   const { notify } = useActions();
   const [tab, setTab] = useState("collections");
