@@ -14,9 +14,7 @@ import {
   Store,
   Users,
 } from "lucide-react";
-import { money, sellerBalance } from "@/lib/prototype/domain";
-import { usePrototypeState } from "@/lib/prototype/store";
-import type { Seller } from "@/lib/prototype/types";
+import { money } from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import {
   Avatar,
@@ -35,13 +33,15 @@ import {
   type CustomerValues,
 } from "@/features/customers/customer-dialog";
 import { SellerDialog } from "@/features/sellers/seller-dialog";
-import { Pagination, PaginationEntries, usePagination } from "@/components/pagination";
+import { Pagination, PaginationEntries } from "@/components/pagination";
 import {
   directoryPath,
   errorMessage,
   type ApiAddress,
   type ApiCustomer,
+  type ApiSeller,
   type DirectoryFilters,
+  type NewSeller,
   type PaginatedResponse,
 } from "@/lib/api";
 
@@ -647,17 +647,81 @@ function AccountCustomersScreen() {
   );
 }
 
-/** Keeps seller cards paginated without changing full-directory balances or preferences. */
+/** Account seller management never presents prototype sellers or simulated balances. */
 export function SellersScreen() {
-  const state = usePrototypeState();
-  const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<Seller | "new" | null>(null);
-  const sellers = state.sellers.filter((seller) =>
-    `${seller.name} ${seller.contact}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const { session } = useActions();
+  if (session) return <AccountSellersScreen key={session.user.id} />;
+  return (
+    <EmptyState
+      title="Sign in to view your sellers"
+      action={<LinkButton href="/login">Sign in</LinkButton>}
+    >
+      Seller records and fee preferences are saved privately to your rider
+      account.
+    </EmptyState>
   );
-  const pagination = usePagination(sellers, query);
+}
+
+/** Manages owned seller preferences through the existing API without touching parcel snapshots. */
+function AccountSellersScreen() {
+  const { request, notify } = useActions();
+  const { filters, result, loading, error, controls, updateFilters, reload } =
+    useAccountDirectory<ApiSeller>("sellers");
+  const [editing, setEditing] = useState<ApiSeller | "new" | null>(null);
+  const [archiving, setArchiving] = useState<ApiSeller | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const sellers = result?.data ?? [];
+
+  /** Creates or updates only the allowed fee defaults; the server supplies ownership. */
+  async function saveSeller(values: NewSeller) {
+    if (!editing) return;
+    const creating = editing === "new";
+    await request<{ data: ApiSeller }>(
+      creating ? "/sellers" : `/sellers/${editing.id}`,
+      creating ? "POST" : "PATCH",
+      values,
+    );
+    reload(creating);
+    notify(
+      creating
+        ? "Seller saved to your account."
+        : "Seller updated. Existing parcel prices stay unchanged.",
+    );
+  }
+
+  /** Archives/restores the same seller identity while preserving existing parcel history. */
+  async function changeArchive() {
+    if (!archiving || busy) return;
+    setBusy(true);
+    setActionError("");
+    const restoring = !!archiving.archived_at;
+    try {
+      await request(
+        `/sellers/${archiving.id}${restoring ? "/restore" : ""}`,
+        restoring ? "POST" : "DELETE",
+      );
+      setArchiving(null);
+      reload();
+      notify(
+        restoring
+          ? "Seller restored."
+          : "Seller archived. Existing parcels and their prices are preserved.",
+      );
+    } catch (cause) {
+      setActionError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** A pending archive/restore must finish before dismissing its confirmation. */
+  function closeArchive() {
+    if (busy) return;
+    setArchiving(null);
+    setActionError("");
+  }
+
   return (
     <>
       <PageHeading
@@ -665,7 +729,9 @@ export function SellersScreen() {
         title="Your sellers"
         description="Set how every seller quotes their parcels, so the delivery fee is always clear."
       >
-        <Button onClick={() => setEditing("new")}>
+        <Button
+          onClick={/** Start an account seller form. */ () => setEditing("new")}
+        >
           <Plus size={17} />
           Add seller
         </Button>
@@ -683,83 +749,194 @@ export function SellersScreen() {
         </div>
       </div>
       <div className="directory-toolbar">
-        <PaginationEntries
-          {...pagination.controls}
-          label="Sellers pagination"
-        />
+        <select
+          aria-label="Seller record status"
+          value={filters.archived ? "archived" : "active"}
+          onChange={
+            /** Archive filters start at the first matching server page. */ (
+              event,
+            ) =>
+              updateFilters({
+                archived: event.target.value === "archived",
+                page: 1,
+              })
+          }
+        >
+          <option value="active">Active sellers</option>
+          <option value="archived">Archived sellers</option>
+        </select>
+        <Button
+          variant="ghost"
+          disabled={loading}
+          onClick={/** Reload the owned directory on demand. */ () => reload()}
+        >
+          <RefreshCw size={16} /> Refresh
+        </Button>
+      </div>
+      <div className="directory-toolbar">
+        <PaginationEntries {...controls} label="Sellers pagination" />
         <div className="input-with-icon">
           <Search size={17} />
           <input
+            type="search"
             placeholder="Search sellers..."
             aria-label="Search sellers"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            maxLength={100}
+            value={filters.query}
+            onChange={
+              /** Search all owned sellers, not just the currently loaded cards. */ (
+                event,
+              ) => updateFilters({ query: event.target.value, page: 1 })
+            }
           />
         </div>
       </div>
-      <div className="seller-directory">
-        {pagination.items.map((seller) => (
-          <section className="card seller-directory-card" key={seller.id}>
-            <div className="seller-directory-head">
-              <Avatar name={seller.name} color={seller.color} />
-              <button
-                className="icon-button"
-                aria-label={`Edit ${seller.name}`}
-                onClick={() => setEditing(seller)}
-              >
-                <Pencil size={17} />
-              </button>
-            </div>
-            <h2>{seller.name}</h2>
-            <p>{seller.contact || "Seller contact not set"}</p>
-            <Badge tone={seller.mode === "included" ? "green" : "blue"}>
-              Delivery fee {seller.mode}
-            </Badge>
-            <div className="seller-directory-stats">
-              <span>
-                Default rider fee<strong>{money(seller.fee)}</strong>
-              </span>
-              <span>
-                Parcels in workspace
-                <strong>
-                  {
-                    state.parcels.filter(
-                      (parcel) => parcel.sellerId === seller.id,
-                    ).length
-                  }
-                </strong>
-              </span>
-              <span>
-                Seller share outstanding
-                <strong>{money(sellerBalance(state, seller.id))}</strong>
-              </span>
-            </div>
-            <div className="seller-directory-actions">
-              <Button variant="secondary" onClick={() => setEditing(seller)}>
-                Preferences
-                <ChevronRight size={14} />
-              </Button>
-              <LinkButton href="/collections" variant="ghost">
-                View balance
-              </LinkButton>
-            </div>
-          </section>
-        ))}
-      </div>
-      {!sellers.length && (
+      {loading ? (
+        <Card className="card-body">
+          <p role="status">Loading your sellers…</p>
+        </Card>
+      ) : error ? (
+        <Card className="card-body form-stack">
+          <p role="alert">{error}</p>
+          <Button
+            variant="secondary"
+            onClick={
+              /** Retry the same account query without sample fallback. */ () =>
+                reload()
+            }
+          >
+            Try again
+          </Button>
+        </Card>
+      ) : !sellers.length ? (
         <EmptyState
-          title="No matching sellers"
-          action={<Button onClick={() => setEditing("new")}>Add seller</Button>}
+          title={
+            filters.archived ? "No archived sellers" : "No matching sellers"
+          }
+          action={
+            !filters.archived && (
+              <Button
+                onClick={
+                  /** Add a seller to the actual directory. */ () =>
+                    setEditing("new")
+                }
+              >
+                Add seller
+              </Button>
+            )
+          }
         >
-          Add a seller with explicit fee preferences.
+          {filters.archived
+            ? "Archived sellers keep their history and can be restored here."
+            : "Try another search or add a seller with explicit fee preferences."}
         </EmptyState>
+      ) : (
+        <div className="seller-directory">
+          {sellers.map(
+            /** Display only fields returned by the owned seller Resource. */ (
+              seller,
+            ) => (
+              <section className="card seller-directory-card" key={seller.id}>
+                <div className="seller-directory-head">
+                  <Avatar name={seller.name} />
+                  <Badge tone={seller.archived_at ? "gray" : "green"}>
+                    {seller.archived_at ? "Archived" : "Active"}
+                  </Badge>
+                </div>
+                <h2>{seller.name}</h2>
+                <p>{seller.contact || "Seller contact not set"}</p>
+                <Badge tone={seller.mode === "included" ? "green" : "blue"}>
+                  Delivery fee {seller.mode}
+                </Badge>
+                <div className="seller-directory-stats">
+                  <span>
+                    Default rider fee<strong>{money(seller.fee)}</strong>
+                  </span>
+                </div>
+                <div className="seller-directory-actions">
+                  {!seller.archived_at && (
+                    <Button
+                      variant="secondary"
+                      aria-label={`Edit ${seller.name}`}
+                      onClick={
+                        /** Edit defaults for future intake only. */ () =>
+                          setEditing(seller)
+                      }
+                    >
+                      Preferences
+                      <Pencil size={14} />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    aria-label={`${seller.archived_at ? "Restore" : "Archive"} ${seller.name}`}
+                    onClick={
+                      /** Confirm against this exact seller, clearing an older failure. */ () => {
+                        setActionError("");
+                        setArchiving(seller);
+                      }
+                    }
+                  >
+                    {seller.archived_at ? (
+                      <RotateCcw size={15} />
+                    ) : (
+                      <Archive size={15} />
+                    )}
+                    {seller.archived_at ? "Restore" : "Archive"}
+                  </Button>
+                </div>
+              </section>
+            ),
+          )}
+        </div>
       )}
-      <Pagination {...pagination.controls} label="Sellers pagination" />
+      {result && !loading && !error && (
+        <Pagination {...controls} label="Sellers pagination" />
+      )}
       {editing && (
         <SellerDialog
-          seller={editing === "new" ? undefined : editing}
-          onClose={() => setEditing(null)}
+          key={editing === "new" ? "new" : editing.id}
+          initialValues={editing === "new" ? undefined : editing}
+          onSave={saveSeller}
+          onClose={
+            /** Drop this form without persisting draft data. */ () =>
+              setEditing(null)
+          }
         />
+      )}
+      {archiving && (
+        <Modal
+          open
+          onClose={closeArchive}
+          closeDisabled={busy}
+          title={archiving.archived_at ? "Restore seller?" : "Archive seller?"}
+          description={archiving.name}
+        >
+          <div className="dialog-body form-stack">
+            <p>
+              {archiving.archived_at
+                ? "This seller will be available for new parcels again with the same saved fee preferences."
+                : "This seller will be hidden from new parcel choices. Existing parcels, prices and delivery history stay unchanged. You can restore the seller later."}
+            </p>
+            {actionError && (
+              <p className="form-error" role="alert">
+                {actionError}
+              </p>
+            )}
+          </div>
+          <footer className="dialog-footer">
+            <Button variant="secondary" disabled={busy} onClick={closeArchive}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={changeArchive}>
+              {busy
+                ? "Saving…"
+                : archiving.archived_at
+                  ? "Restore seller"
+                  : "Archive seller"}
+            </Button>
+          </footer>
+        </Modal>
       )}
     </>
   );
