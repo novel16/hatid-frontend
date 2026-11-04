@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type SyntheticEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
   CloudOff,
   Database,
   LogOut,
+  MonitorSmartphone,
   Package,
   RefreshCw,
   ShieldCheck,
@@ -21,7 +22,8 @@ import {
 } from "lucide-react";
 import { prototypeStore, usePrototypeState } from "@/lib/prototype/store";
 import { formatDate } from "@/lib/prototype/domain";
-import { ApiError, errorMessage } from "@/lib/api";
+import { ApiError, errorMessage, type AccountPreferences } from "@/lib/api";
+import { DevicesPanel } from "@/features/settings/devices-panel";
 import { useActions } from "@/components/providers";
 import {
   Pagination,
@@ -40,13 +42,26 @@ import {
   PasswordInput,
 } from "@/components/ui";
 
-/** Keep real account actions separate from local prototype profile and preferences. */
+/** Saves real account settings while keeping sample profiles and controls separate. */
 export function SettingsScreen() {
   const state = usePrototypeState();
-  const { commit, notify, session, signOut, changePassword } = useActions();
+  const { commit, notify, session, signOut, changePassword, saveSettings } =
+    useActions();
   const router = useRouter();
   const [reset, setReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileErrors, setProfileErrors] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [preferenceBusy, setPreferenceBusy] = useState(false);
+  const settingsBusy = profileBusy || preferenceBusy;
+  const profile = session?.user ?? {
+    name: state.settings.riderName,
+    phone: state.settings.phone,
+  };
+  const preferences = session?.user.preferences ?? state.settings;
 
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -55,23 +70,68 @@ export function SettingsScreen() {
     Record<string, string[]>
   >({});
 
+  /** Ends local access and attempts revocation of this device's token. */
   async function handleSignOut() {
     setSigningOut(true);
     await signOut();
     router.replace("/login");
   }
 
-  function savePreference(
-    key: "deliveryAlerts" | "collectionAlerts" | "compactView",
-    value: boolean,
-  ) {
-    commit(
-      (current) => ({
-        ...current,
-        settings: { ...current.settings, [key]: value },
-      }),
-      "Preference saved.",
-    );
+  /** Preserves entered values after failure and never copies real profile data to the sample store. */
+  async function saveProfile(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (settingsBusy) return;
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") ?? "").trim();
+    const phone = String(data.get("phone") ?? "").trim();
+    setProfileBusy(true);
+    setProfileError("");
+    setProfileErrors({});
+    try {
+      if (session) {
+        await saveSettings({ name, phone: phone || null });
+        notify("Profile saved to your account.");
+      } else {
+        commit(
+          /** Sample edits are deliberately isolated from the signed-in account. */
+          (current) => ({
+            ...current,
+            settings: { ...current.settings, riderName: name, phone },
+          }),
+          "Sample profile saved on this device.",
+        );
+      }
+    } catch (cause) {
+      setProfileError(errorMessage(cause));
+      if (cause instanceof ApiError) setProfileErrors(cause.errors);
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  /** Saves one account preference at a time and applies the confirmed server result. */
+  async function savePreference(key: keyof AccountPreferences, value: boolean) {
+    if (settingsBusy) return;
+    if (!session) {
+      commit(
+        /** Demo preferences affect only local sample activity. */
+        (current) => ({
+          ...current,
+          settings: { ...current.settings, [key]: value },
+        }),
+        "Sample preference saved.",
+      );
+      return;
+    }
+    setPreferenceBusy(true);
+    try {
+      await saveSettings({ preferences: { [key]: value } });
+      notify("Preference saved to your account.");
+    } catch (cause) {
+      notify(errorMessage(cause), true);
+    } finally {
+      setPreferenceBusy(false);
+    }
   }
 
   return (
@@ -79,100 +139,142 @@ export function SettingsScreen() {
       <PageHeading
         eyebrow="A WORKSPACE THAT WORKS FOR YOU"
         title="Settings"
-        description="Your rider profile, preferences, and local prototype controls."
+        description="Your rider profile, account security, and workspace preferences."
       />
       <div className="settings-layout">
         <div className="form-stack">
           <Card
-            title={session ? "Demo workspace profile" : "Rider profile"}
+            title={session ? "Rider profile" : "Sample rider profile"}
             description={
               session
-                ? "These sample profile edits stay on this device and do not change your signed-in account."
-                : "Profile edits in this prototype are saved on this device."
+                ? "Your name and contact number are saved to your account."
+                : "Demo profile edits are saved only on this device."
             }
             action={<UserRound size={20} />}
           >
             <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                commit(
-                  (current) => ({
-                    ...current,
-                    settings: {
-                      ...current.settings,
-                      riderName: String(data.get("name")).trim(),
-                      phone: String(data.get("phone")).trim(),
-                    },
-                  }),
-                  "Prototype profile saved.",
-                );
-              }}
+              key={session?.user.id ?? "demo"}
+              method="post"
+              onSubmit={saveProfile}
             >
               <div className="card-body form-stack">
+                {profileError && (
+                  <div className="form-error" role="alert">
+                    {profileError}
+                  </div>
+                )}
                 <div className="profile-header">
-                  <Avatar name={state.settings.riderName} color="sage" />
+                  <Avatar name={profile.name} color="sage" />
                   <div>
-                    <h3>{state.settings.riderName}</h3>
+                    <h3>{profile.name}</h3>
                     <Badge tone="green">Independent rider</Badge>
                   </div>
                 </div>
                 <div className="form-grid">
-                  <Field label="Full name" required>
+                  <Field
+                    label="Full name"
+                    required
+                    error={profileErrors.name?.[0]}
+                  >
                     <input
                       name="name"
-                      defaultValue={state.settings.riderName}
+                      defaultValue={profile.name}
+                      autoComplete="name"
+                      disabled={settingsBusy}
+                      aria-invalid={!!profileErrors.name}
                       required
                       minLength={2}
-                      maxLength={100}
+                      maxLength={255}
                     />
                   </Field>
-                  <Field label="Phone">
+                  <Field
+                    label="Phone"
+                    error={profileErrors.phone?.[0]}
+                    hint="Optional contact number."
+                  >
                     <input
                       name="phone"
                       type="tel"
-                      defaultValue={state.settings.phone}
+                      defaultValue={profile.phone ?? ""}
+                      autoComplete="tel"
+                      disabled={settingsBusy}
+                      aria-invalid={!!profileErrors.phone}
                       maxLength={30}
                     />
                   </Field>
+                  {session && (
+                    <Field
+                      label="Email address"
+                      hint="Your sign-in email is read-only here."
+                    >
+                      <input
+                        type="email"
+                        value={session.user.email}
+                        readOnly
+                        autoComplete="email"
+                      />
+                    </Field>
+                  )}
                 </div>
               </div>
               <div className="card-form-footer">
-                <Button type="submit">
+                <Button type="submit" disabled={settingsBusy}>
                   <Check size={16} />
-                  Save profile
+                  {profileBusy ? "Saving…" : "Save profile"}
                 </Button>
               </div>
             </form>
           </Card>
           <Card
             title="Your preferences"
-            description="Keep the information you need close at hand."
+            description={
+              session
+                ? "Saved to your account. Delivery activity currently uses sample data."
+                : "These preferences apply to this device's sample workspace."
+            }
           >
             <div className="preference-list">
               <Preference
                 title="Delivery update alerts"
-                description="Get a local alert when delivery outcomes change."
-                checked={state.settings.deliveryAlerts}
+                description="Show in-app alerts for delivery outcome updates."
+                checked={preferences.deliveryAlerts}
+                disabled={settingsBusy}
                 onChange={(value) => savePreference("deliveryAlerts", value)}
               />
               <Preference
                 title="Collection & remittance alerts"
                 description="Highlight new receipt and handover records."
-                checked={state.settings.collectionAlerts}
+                checked={preferences.collectionAlerts}
+                disabled={settingsBusy}
                 onChange={(value) => savePreference("collectionAlerts", value)}
               />
               <Preference
                 title="Compact workspace"
                 description="Reduce table spacing when reviewing more parcels."
-                checked={state.settings.compactView}
+                checked={preferences.compactView}
+                disabled={settingsBusy}
                 onChange={(value) => savePreference("compactView", value)}
               />
             </div>
           </Card>
+          {session ? (
+            <DevicesPanel />
+          ) : (
+            <Card
+              title="Signed-in devices"
+              action={<MonitorSmartphone size={20} />}
+            >
+              <div className="card-body">
+                <p className="small-muted">
+                  Sign in to review and manage your account&apos;s active
+                  sign-ins. Demo mode has no account devices.
+                </p>
+              </div>
+            </Card>
+          )}
           <Card
-            title="Prototype controls"
-            description="Try the flows before business APIs are connected."
+            title="Sample workspace controls"
+            description="These controls affect sample delivery data only, never your account settings."
           >
             <div className="setting-action-row">
               <div>
@@ -208,8 +310,8 @@ export function SettingsScreen() {
                     This sign-in lasts until{" "}
                     {formatDate(session.expires_at, true)} or you sign out. This
                     tab keeps your sign-in through refresh and checks it with
-                    Hatid again. Closing the tab ends local access. Demo
-                    delivery records stay local.
+                    Hatid again. Closing the tab ends local access but does not
+                    revoke its sign-in token. Use the device list to revoke it.
                   </p>
                 </>
               ) : (
@@ -417,16 +519,19 @@ export function SettingsScreen() {
   );
 }
 
+/** Reuses the accessible switch for both sample and server-confirmed preferences. */
 function Preference({
   title,
   description,
   checked,
   onChange,
+  disabled = false,
 }: {
   title: string;
   description: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="preference-row">
@@ -438,7 +543,11 @@ function Preference({
         type="checkbox"
         role="switch"
         checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
+        disabled={disabled}
+        onChange={
+          /** Only expose the native checkbox's boolean state to its caller. */
+          (event) => onChange(event.target.checked)
+        }
       />
       <span className="switch-control" />
     </label>

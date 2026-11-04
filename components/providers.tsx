@@ -21,6 +21,8 @@ import {
   parseStoredSession,
   verifyRiderSession,
   type ApiUser,
+  type ApiToken,
+  type SettingsUpdate,
   type AuthSession,
   type StoredAuthSession,
   type NewPassword,
@@ -38,6 +40,10 @@ interface AppActions {
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
   enterDemo: () => void;
+  request: <T>(path: string, method?: string, data?: unknown) => Promise<T>;
+  saveSettings: (data: SettingsUpdate) => Promise<void>;
+  revokeDevice: (device: Pick<ApiToken, "id" | "is_current">) => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
   changePassword: (
     data: NewPassword & { current_password: string },
   ) => Promise<void>;
@@ -78,6 +84,8 @@ export function Providers({ children }: { children: ReactNode }) {
     "checking" | "ready" | "unavailable"
   >("checking");
   const authVersion = useRef(0);
+  const accountReadVersion = useRef(0);
+  const accessToken = session?.access_token;
 
   const notify = useCallback((message: string, error = false) => {
     const id = crypto.randomUUID();
@@ -160,12 +168,17 @@ export function Providers({ children }: { children: ReactNode }) {
     }
   }, [endSession, notify]);
 
+  /** Shares Bearer errors and discards responses from an account that has since signed out. */
   const request = useCallback(
     async <T,>(path: string, method = "GET", data?: unknown): Promise<T> => {
-      if (!session) throw new ApiError("Sign in to continue.", 401);
+      if (!accessToken) throw new ApiError("Sign in to continue.", 401);
       const attempt = authVersion.current;
       try {
-        return await apiRequest<T>(path, method, data, session.access_token);
+        const result = await apiRequest<T>(path, method, data, accessToken);
+        if (attempt !== authVersion.current) {
+          throw new ApiError("Your sign-in changed. Please try again.", 0);
+        }
+        return result;
       } catch (cause) {
         if (
           attempt === authVersion.current &&
@@ -181,8 +194,43 @@ export function Providers({ children }: { children: ReactNode }) {
         throw cause;
       }
     },
-    [session, endSession],
+    [accessToken, endSession],
   );
+
+  /** Updates only the current verified identity; account details never enter demo/browser storage. */
+  const saveSettings = useCallback(
+    async (values: SettingsUpdate) => {
+      const { data: user } = await request<{ data: ApiUser }>(
+        "/settings",
+        "PATCH",
+        values,
+      );
+      accountReadVersion.current += 1;
+      setSession(
+        /** Do not apply an account result to a different sign-in. */
+        (current) =>
+          current && current.access_token === accessToken
+            ? { ...current, user }
+            : current,
+      );
+    },
+    [request, accessToken],
+  );
+
+  /** Revokes only a server-listed owned token and clears local access when it is this device. */
+  const revokeDevice = useCallback(
+    async (device: Pick<ApiToken, "id" | "is_current">) => {
+      await request<void>(`/auth/tokens/${device.id}`, "DELETE");
+      if (device.is_current) endSession();
+    },
+    [request, endSession],
+  );
+
+  /** Keeps failed global sign-outs retryable instead of claiming server revocation succeeded. */
+  const signOutEverywhere = useCallback(async () => {
+    await request<void>("/auth/logout-all", "POST");
+    endSession();
+  }, [request, endSession]);
 
   const signOut = useCallback(async () => {
     const token = session?.access_token;
@@ -257,9 +305,12 @@ export function Providers({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!session) return;
+    /** Prevents a focus read started before a saved profile from replacing the newer account. */
     function verifyAccount() {
+      const readVersion = accountReadVersion.current;
       void request<{ data: ApiUser }>("/auth/me")
         .then(({ data: user }) => {
+          if (readVersion !== accountReadVersion.current) return;
           setSession((current) =>
             current && current.access_token === session?.access_token
               ? { ...current, user }
@@ -309,6 +360,10 @@ export function Providers({ children }: { children: ReactNode }) {
         signIn,
         signOut,
         enterDemo,
+        request,
+        saveSettings,
+        revokeDevice,
+        signOutEverywhere,
         changePassword,
       }}
     >

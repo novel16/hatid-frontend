@@ -43,10 +43,13 @@ const links = [
   },
 ];
 
+/** Uses verified account identity/preferences while keeping sample workspace state separate. */
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
   const riderName = session?.user.name ?? state.settings.riderName;
+  const compactView =
+    session?.user.preferences.compactView ?? state.settings.compactView;
   const searchRef = useRef<HTMLInputElement>(null);
   const path = usePathname();
   const router = useRouter();
@@ -88,9 +91,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             : "Notifications");
 
   return (
-    <div
-      className={`workspace ${state.settings.compactView ? "workspace-compact" : ""}`}
-    >
+    <div className={`workspace ${compactView ? "workspace-compact" : ""}`}>
       {menuOpen && (
         <button
           className="sidebar-backdrop"

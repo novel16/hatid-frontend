@@ -3698,6 +3698,15 @@ body:has(dialog[open]) {
   outline: 3px solid #82b99c;
   outline-offset: 3px;
 }
+.preference-row input:disabled + .switch-control {
+  opacity: 0.5;
+}
+.device-list .setting-action-row > div {
+  min-width: 0;
+}
+.device-list .setting-action-row h3 {
+  overflow-wrap: anywhere;
+}
 .setting-action-row {
   display: flex;
   align-items: center;

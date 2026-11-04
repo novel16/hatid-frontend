@@ -20,6 +20,12 @@ const user = {
   id: 1,
   name: "Test Rider",
   email: "rider@example.test",
+  phone: null,
+  preferences: {
+    deliveryAlerts: true,
+    collectionAlerts: true,
+    compactView: false,
+  },
   role: "rider",
   email_verified_at: null,
   created_at: "2026-11-01T00:00:00Z",

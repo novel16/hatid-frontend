@@ -1,7 +1,40 @@
+export interface AccountPreferences {
+  deliveryAlerts: boolean;
+  collectionAlerts: boolean;
+  compactView: boolean;
+}
+
+export interface SettingsUpdate {
+  name?: string;
+  phone?: string | null;
+  preferences?: Partial<AccountPreferences>;
+}
+
+export interface ApiToken {
+  id: number;
+  name: string;
+  is_current: boolean;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}
+
 export interface ApiUser {
   id: number;
   name: string;
   email: string;
+  phone: string | null;
+  preferences: AccountPreferences;
   role: "rider" | "admin";
   email_verified_at: string | null;
   created_at: string;

@@ -27,7 +27,7 @@ Login, rider registration, current-user verification, password recovery/reset, p
 
 The root opens sign-in. Workspace pages require a verified rider session or explicit Try the interactive prototype / tour entry. A safe internal return path takes you back to the requested page. Demo access is also in memory; after a full refresh choose demo again. Client navigation guards control the UI; Laravel enforces real API authorization.
 
-Business screens use clearly labelled sample records in browser localStorage. Demo records remain available after signing out and entering demo again. No parcel, delivery or remittance business endpoint exists yet. The actual account name/email come from the API and are not copied into local demo settings. Settings distinguishes the demo workspace profile from the connected account and includes Reset demo data.
+Business screens in this checkout use clearly labelled sample records in browser localStorage. Demo records remain available after signing out and entering demo again. No parcel, delivery or remittance business endpoint exists yet. Account profile/preferences come from the API and are never copied into demo settings. Settings keeps account saves and sample-data reset separate.
 
 Collections record manual cash/GCash receipts. GCash happens in the rider's external account; Hatid does not verify or transfer money. Contact actions display a prototype preview rather than sending messages or making calls.
 
@@ -63,6 +63,16 @@ Read authentication in this order: lib/api.ts (normalization, transport, errors 
 
 The prototype reuses selectBatch() and selectNextStop() in lib/prototype/domain.ts across the dashboard, batch list, deliveries and map. Selecting a stop checks eligibility, supports unknown pins/offline manual selection, and sets the appropriate batch. Shared controls and related one-use helpers remain in existing files; framework route entries retain their page metadata.
 
+## Account settings
+
+Signed-in riders can save their name and optional phone through PATCH /api/v1/settings; email stays read-only. Partial deliveryAlerts, collectionAlerts and compactView preferences are saved to the same account and restored through /auth/me. Compact mode applies immediately to the workspace. Live delivery/collection alerts and offline sync remain future business features; current activity and sync screens use sample data.
+
+The Devices panel uses the existing owned, active-token endpoints with server pagination at 10/50/100 entries. Confirming a revoke affects that sign-in only; revoking this device or every device ends this tab's account access. Failures remain visible and retryable. Closing a tab removes local credentials without revoking its server token.
+
+Read features/settings/workspace-settings.tsx (profile/preferences and existing password form), features/settings/devices-panel.tsx (new focused device loading/pagination/confirmation UI), components/providers.tsx (protected requests, account updates and session cleanup), then lib/api.ts (shared types/transport). The new panel is separate because device pagination and revocation have their own asynchronous state; it reuses the existing Modal and Pagination controls. Confirmed saves invalidate older focus-triggered account reads.
+
+Verified on 4 November: 99 API tests / 745 assertions and 40 frontend tests passed, plus scoped ESLint, TypeScript and formatting checks. The additive account-settings migration was applied. Browser review used demo mode for desktop/mobile layout, compact mode and cancel-safe sample reset; account saving and device authorization/revocation were tested in isolated API tests, without changing the user's account credentials. No production build was run into the user's active dev output. The existing dev-only instant-navigation diagnostic remains visible on protected routes.
+
 ## Reusable pagination
 
 Read components/pagination.tsx (shared top entry selector, controlled footer and the local-list hook), lib/pagination.ts (range and page-number logic), then a caller such as features/deliveries/deliveries-screen.tsx. lib/pagination.test.ts checks empty, partial, clamped and long-page ranges. These are the three new files; no dependency was added.
@@ -80,7 +90,7 @@ For current and future searchable paginated lists, place PaginationEntries on th
 
 For a server list, render the API's data directly and pass meta.current_page, the selected perPage and meta.total to Pagination. Its onChange callback receives {page, perPage}; use those values in the next ?page=...&per_page=... request, and pass disabled={loading}. Do not slice an already-paginated server response. Laravel's native links/meta remain the source of the server result count.
 
-This frontend branch is feature/auth and contains sample business lists. The API-connected directory screens are still on feature/customer/seller; the user will combine branches separately. When combining them, replace their older DirectoryPagination footer with this shared component and carry perPage through directoryPath/useDirectory instead of the older fixed 25. This change intentionally does not merge branches.
+This checkout still contains sample business lists. The API-connected directory screens are on feature/customer/seller; the user will combine branches separately. When combining them, replace their older DirectoryPagination footer with this shared component and carry perPage through directoryPath/useDirectory instead of the older fixed 25. Settings work does not merge those branches.
 
 Pagination is used by customer/seller directories, delivery stops, weekly batches and their stops, seller balances, collection/remittance records, the fee ledger and notifications. Short dashboard previews, routing candidates and form pickers keep their existing behavior.
 
