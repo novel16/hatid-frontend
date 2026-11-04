@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Check, CircleAlert, MapPin, UserPlus, ChevronRight, Plus, Search } from "lucide-react";
-import { usePrototypeState } from "@/lib/prototype/store";
+import { Check, CircleAlert, MapPin, UserPlus } from "lucide-react";
 import { createCustomer } from "@/lib/prototype/domain";
 import type { Customer } from "@/lib/prototype/types";
 import { ApiError, errorMessage } from "@/lib/api";
 import { useActions } from "@/components/providers";
-import { Avatar, Badge, Button, EmptyState, Field, Modal } from "@/components/ui";
+import { Button, Field, Modal } from "@/components/ui";
 
 export interface AddressValues {
   label: string;
@@ -302,93 +301,5 @@ export function AddressDialog({
         </footer>
       </form>
     </Modal>
-  );
-}
-
-/** Preserve the existing parcel picker until the modal entry workflow is installed. */
-export function CustomerPicker({
-  open,
-  onClose,
-  onSelect,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSelect: (customer: Customer) => void;
-}) {
-  const state = usePrototypeState();
-  const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const matches = state.customers.filter((customer) =>
-    `${customer.name} ${customer.phone} ${customer.addresses.map((address) => address.text).join(" ")}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
-  return (
-    <>
-      <Modal
-        open={open}
-        onClose={onClose}
-        title="Who is this parcel for?"
-        description="Search first to keep a customer’s parcels together."
-      >
-        <div className="dialog-body">
-          <div className="input-with-icon">
-            <Search size={17} />
-            <input
-              autoComplete="off"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              aria-label="Search customers"
-              placeholder="Name, phone number or address..."
-            />
-          </div>
-          <div className="customer-picker-list">
-            {matches.map((customer) => (
-              <button
-                key={customer.id}
-                onClick={() => {
-                  onSelect(customer);
-                  onClose();
-                }}
-              >
-                <Avatar name={customer.name} color={customer.color} />
-                <span>
-                  <strong>{customer.name}</strong>
-                  <small>
-                    {customer.phone} · {customer.addresses[0]?.text}
-                  </small>
-                </span>
-                {customer.addresses.every(
-                  (address) => address.latitude === null,
-                ) && <Badge tone="amber">No pin</Badge>}
-                <ChevronRight size={17} />
-              </button>
-            ))}
-          </div>
-          {!matches.length && (
-            <EmptyState title="No customer found">
-              Add a new customer without leaving this parcel.
-            </EmptyState>
-          )}
-        </div>
-        <footer className="dialog-footer">
-          <span className="small-muted">
-            {matches.length} matching customers
-          </span>
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus size={16} />
-            Add new customer
-          </Button>
-        </footer>
-      </Modal>
-      <CustomerDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onSaved={(customer) => {
-          onSelect(customer);
-          onClose();
-        }}
-      />
-    </>
   );
 }

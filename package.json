@@ -9,17 +9,19 @@
     "start": "next start -p 3011",
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 lib/api.test.ts lib/pagination.test.ts lib/prototype/domain.test.ts",
+    "test": "node --test --test-concurrency=1 lib/api.test.ts lib/maps.test.ts lib/pagination.test.ts lib/prototype/domain.test.ts",
     "format": "prettier --write app components features lib",
     "format:check": "prettier --check app components features lib"
   },
   "dependencies": {
+    "leaflet": "1.9.4",
     "lucide-react": "^1.66.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@types/leaflet": "1.9.22",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

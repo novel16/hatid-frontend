@@ -27,6 +27,7 @@ import {
 import { usePrototypeState } from "@/lib/prototype/store";
 import { Avatar, Badge, Brand, Modal } from "./ui";
 import { useActions } from "./providers";
+import { useParcelEntry } from "@/features/parcels/parcel-entry-screen";
 
 const links = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -47,11 +48,26 @@ const links = [
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
+  const { openParcel } = useParcelEntry();
   const riderName = session?.user.name ?? state.settings.riderName;
   const compactView =
     session?.user.preferences.compactView ?? state.settings.compactView;
   const searchRef = useRef<HTMLInputElement>(null);
   const path = usePathname();
+  const accountPage =
+    !!session &&
+    [
+      "/dashboard",
+      "/batches",
+      "/parcels",
+      "/deliveries",
+      "/settings",
+      "/map",
+      "/customers",
+    ].some(
+      /** Only implemented account pages receive an account-data label. */
+      (prefix) => path.startsWith(prefix),
+    );
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -66,12 +82,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     document.addEventListener("keydown", focusSearch);
     return () => document.removeEventListener("keydown", focusSearch);
   }, []);
-  const pending = state.parcels.filter(
-    (parcel) =>
-      parcel.batchId === state.selectedBatchId && parcel.status === "pending",
-  ).length;
+  const pending = session
+    ? 0
+    : state.parcels.filter(
+        (parcel) =>
+          parcel.batchId === state.selectedBatchId &&
+          parcel.status === "pending",
+      ).length;
   const matches =
-    query.trim().length > 1
+    !session && query.trim().length > 1
       ? state.customers
           .filter((customer) =>
             customer.name.toLowerCase().includes(query.toLowerCase()),
@@ -177,7 +196,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               <Menu size={22} />
             </button>
             <span className="breadcrumb">
-              Prototype <ChevronRight size={13} />
+              {session ? "Workspace" : "Prototype"} <ChevronRight size={13} />
               <strong>{current}</strong>
             </span>
           </div>
@@ -229,15 +248,21 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <div className="topbar-actions">
             <Link
               href="/sync"
-              className={`sync-status ${state.offline ? "is-offline" : ""}`}
+              className={`sync-status ${!session && state.offline ? "is-offline" : ""}`}
               title="Open sync status"
             >
-              {state.offline ? (
+              {!session && state.offline ? (
                 <CloudOff size={16} />
               ) : (
                 <CloudCheck size={16} />
               )}
-              <span>{state.offline ? "Offline" : "All changes saved"}</span>
+              <span>
+                {session
+                  ? "Online saves only"
+                  : state.offline
+                    ? "Offline"
+                    : "All changes saved"}
+              </span>
             </Link>
             <Link
               className="icon-button notification-button"
@@ -245,7 +270,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               aria-label="Open notifications"
             >
               <Bell size={20} />
-              {!state.notificationsRead && <i />}
+              {!session && !state.notificationsRead && <i />}
             </Link>
             <Link
               className="top-avatar"
@@ -257,7 +282,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main id="main-content" className="page-content">
-          {state.offline && (
+          {session && !accountPage && (
+            <div className="notice notice-amber">
+              <p>
+                Sample preview. This page shows demo data; your saved parcels
+                and outcomes appear in Weekly batches and Deliveries.
+              </p>
+            </div>
+          )}
+          {!session && state.offline && (
             <div className="offline-banner">
               <CloudOff size={17} />
               <span>You’re offline. Changes stay on this device.</span>
@@ -270,7 +303,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           {children}
           <footer className="workspace-footer">
             <span>Made for the way you deliver.</span>
-            <Badge tone="green">Interactive prototype · sample data</Badge>
+            <Badge tone="green">
+              {accountPage
+                ? "Account data"
+                : "Interactive prototype · sample data"}
+            </Badge>
             <Link href="/welcome">
               Take a quick tour
               <ArrowUpRight size={12} />
@@ -285,18 +322,40 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           { href: "/parcels/new", label: "Add parcel", icon: Plus },
           { href: "/map", label: "Route", icon: Route },
           { href: "/collections", label: "Money", icon: Wallet },
-        ].map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={`${path.startsWith(href) ? "active" : ""} ${href === "/parcels/new" ? "mobile-add" : ""}`}
-          >
-            <span>
-              <Icon size={21} />
-            </span>
-            <small>{label}</small>
-          </Link>
-        ))}
+        ].map(
+          /** The add action opens the shared modal; the other items navigate normally. */ ({
+            href,
+            label,
+            icon: Icon,
+          }) =>
+            href === "/parcels/new" ? (
+              <button
+                key={href}
+                type="button"
+                className="mobile-add"
+                onClick={
+                  /** Keep the current mobile page behind the parcel form. */ () =>
+                    openParcel()
+                }
+              >
+                <span>
+                  <Icon size={21} />
+                </span>
+                <small>{label}</small>
+              </button>
+            ) : (
+              <Link
+                key={href}
+                href={href}
+                className={path.startsWith(href) ? "active" : ""}
+              >
+                <span>
+                  <Icon size={21} />
+                </span>
+                <small>{label}</small>
+              </Link>
+            ),
+        )}
       </nav>
       <Modal
         open={helpOpen}

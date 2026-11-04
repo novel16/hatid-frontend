@@ -45,8 +45,23 @@ import {
   OutcomeDialog,
   type Outcome,
 } from "./outcome-dialogs";
+import { AccountDeliveryDetail } from "./account-delivery-detail";
 
+/** Use the actual stop API only for a verified rider; preserve explicit demo behavior. */
 export function DeliveryDetailScreen({ parcelId }: { parcelId: string }) {
+  const { session } = useActions();
+  return session ? (
+    <AccountDeliveryDetail
+      key={`${session.user.id}-${parcelId}`}
+      parcelId={parcelId}
+    />
+  ) : (
+    <DemoDeliveryDetail parcelId={parcelId} />
+  );
+}
+
+/** Existing maps, pins and recommendations remain within the separate sample prototype. */
+function DemoDeliveryDetail({ parcelId }: { parcelId: string }) {
   const state = usePrototypeState();
   const hydrated = usePrototypeHydrated();
   const { commit, notify } = useActions();

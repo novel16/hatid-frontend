@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 
 const manrope = Manrope({
   variable: "--font-manrope",

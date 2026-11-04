@@ -1,5 +1,7 @@
 "use client";
 
+import { AddParcelButton } from "@/features/parcels/parcel-entry-screen";
+
 import Link from "next/link";
 import {
   ArrowDownLeft,
@@ -30,11 +32,28 @@ import {
   SectionLink,
 } from "@/components/ui";
 import { NextStopCard, StopTable } from "@/components/delivery-ui";
+import { AccountDeliveriesScreen } from "@/features/deliveries/account-deliveries";
 
+/** Account navigation shows actual work; prototype metrics and sample IDs stay in demo mode. */
 export function DashboardScreen() {
   const state = usePrototypeState();
   const { commit, session } = useActions();
-  const riderName = session?.user.name ?? state.settings.riderName;
+  if (session)
+    return (
+      <>
+        <PageHeading
+          eyebrow="YOUR RIDER WORKSPACE"
+          title={`Magandang araw, ${session.user.name.split(" ")[0]}.`}
+          description="Encode parcels and continue open deliveries across intake weeks."
+        >
+          <LinkButton href="/batches" variant="secondary">
+            Weekly batches
+          </LinkButton>
+        </PageHeading>
+        <AccountDeliveriesScreen embedded />
+      </>
+    );
+  const riderName = state.settings.riderName;
   const summary = totals(state, state.selectedBatchId);
   const batch = state.batches.find((item) => item.id === state.selectedBatchId);
   const goal = Math.max(1, summary.count);
@@ -59,10 +78,10 @@ export function DashboardScreen() {
             </option>
           ))}
         </select>
-        <LinkButton href="/parcels/new">
+        <AddParcelButton>
           <Plus size={17} />
           Add parcel
-        </LinkButton>
+        </AddParcelButton>
       </PageHeading>
       <div className="dashboard-layout">
         <div className="metrics dashboard-metrics">

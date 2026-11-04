@@ -1,5 +1,6 @@
 "use client";
 
+import { AddParcelButton } from "@/features/parcels/parcel-entry-screen";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui";
 import { StopTable } from "@/components/delivery-ui";
 import { BatchCard, BatchDialog } from "@/features/batches/batch-components";
+import { AccountDeliveriesScreen } from "@/features/deliveries/account-deliveries";
 import {
   ApiError,
   errorMessage,
@@ -142,6 +144,7 @@ function DemoBatchesScreen({ batchId }: BatchScreenProps) {
             New weekly batch
           </Button>
         )}
+        {batch && <AddParcelButton batchId={batch.id} />}
       </PageHeading>
       {!batch && (
         <div className="directory-toolbar">
@@ -426,7 +429,7 @@ function AccountBatchesScreen({ batchId }: BatchScreenProps) {
             </Badge>
             <span>Viewing this batch</span>
           </div>
-          <EmptyState title="Parcel intake is next">This batch keeps its original dates and stays accessible across weeks.</EmptyState>
+          <AccountDeliveriesScreen batchId={String(batch.id)} embedded />
         </>
       );
     if (result?.data.length)

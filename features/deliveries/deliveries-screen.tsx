@@ -1,29 +1,34 @@
 "use client";
 
+import { AddParcelButton } from "@/features/parcels/parcel-entry-screen";
+
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, ListFilter, Plus, Search } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
 import { getStops, money, selectBatch } from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
-import {
-  Badge,
-  Button,
-  Card,
-  LinkButton,
-  PageHeading,
-  exportCsv,
-} from "@/components/ui";
+import { Badge, Button, Card, PageHeading, exportCsv } from "@/components/ui";
 import { StopTable } from "@/components/delivery-ui";
 import {
   Pagination,
   PaginationEntries,
   usePagination,
 } from "@/components/pagination";
+import { AccountDeliveriesScreen } from "./account-deliveries";
 
+/** Verified accounts use owned stops; sample selection never filters real work. */
 export function DeliveriesScreen() {
   const params = useSearchParams();
+  const { session } = useActions();
   const initialSearch = params.get("search") ?? "";
+  if (session)
+    return (
+      <AccountDeliveriesScreen
+        key={`${session.user.id}-${initialSearch}`}
+        initialSearch={initialSearch}
+      />
+    );
   return (
     <DeliveriesContent key={initialSearch} initialSearch={initialSearch} />
   );
@@ -95,10 +100,10 @@ function DeliveriesContent({ initialSearch }: { initialSearch: string }) {
           <Download size={16} />
           Export
         </Button>
-        <LinkButton href="/parcels/new">
+        <AddParcelButton>
           <Plus size={17} />
           Add parcel
-        </LinkButton>
+        </AddParcelButton>
       </PageHeading>
       <div className="list-summary">
         <span>

@@ -1,5 +1,7 @@
 "use client";
 
+import { AddParcelButton } from "@/features/parcels/parcel-entry-screen";
+
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -25,15 +27,7 @@ import {
 import { usePrototypeState } from "@/lib/prototype/store";
 import type { Stop } from "@/lib/prototype/types";
 import { useActions } from "./providers";
-import {
-  Avatar,
-  Badge,
-  Button,
-  EmptyState,
-  LinkButton,
-  Modal,
-  StatusBadge,
-} from "./ui";
+import { Avatar, Badge, Button, EmptyState, Modal, StatusBadge } from "./ui";
 
 export function StopTable({ stops }: { stops: Stop[] }) {
   if (!stops.length)
@@ -41,10 +35,10 @@ export function StopTable({ stops }: { stops: Stop[] }) {
       <EmptyState
         title="Nothing here just yet"
         action={
-          <LinkButton href="/parcels/new">
+          <AddParcelButton>
             Add your first parcel
             <ArrowRight size={16} />
-          </LinkButton>
+          </AddParcelButton>
         }
       >
         Add a parcel or try a different filter.

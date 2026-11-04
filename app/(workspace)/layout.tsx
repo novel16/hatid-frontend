@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { WorkspaceAccess } from "@/components/providers";
+import { ParcelEntryProvider } from "@/features/parcels/parcel-entry-screen";
 
 export const instant = false;
 
@@ -14,7 +15,9 @@ export default function WorkspaceLayout({ children }: { children: ReactNode }) {
       }
     >
       <WorkspaceAccess>
-        <WorkspaceShell>{children}</WorkspaceShell>
+        <ParcelEntryProvider>
+          <WorkspaceShell>{children}</WorkspaceShell>
+        </ParcelEntryProvider>
       </WorkspaceAccess>
     </Suspense>
   );
