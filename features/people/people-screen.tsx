@@ -1,19 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Archive,
   ChevronRight,
   MapPin,
   MapPinOff,
   Pencil,
   Plus,
+  RefreshCw,
+  RotateCcw,
   Search,
   Store,
   Users,
 } from "lucide-react";
-import { usePrototypeState } from "@/lib/prototype/store";
 import { money, sellerBalance } from "@/lib/prototype/domain";
-import type { Address, Seller } from "@/lib/prototype/types";
+import { usePrototypeState } from "@/lib/prototype/store";
+import type { Seller } from "@/lib/prototype/types";
 import { useActions } from "@/components/providers";
 import {
   Avatar,
@@ -21,77 +24,297 @@ import {
   Button,
   Card,
   EmptyState,
-  Field,
   LinkButton,
   Modal,
   PageHeading,
 } from "@/components/ui";
-import { NewCustomerDialog } from "@/features/customers/customer-dialog";
-import { LocationDialog } from "@/features/customers/location-dialog";
-import { SellerDialog } from "@/features/sellers/seller-dialog";
 import {
-  Pagination,
-  PaginationEntries,
-  usePagination,
-} from "@/components/pagination";
+  AddressDialog,
+  CustomerDialog,
+  type AddressValues,
+  type CustomerValues,
+} from "@/features/customers/customer-dialog";
+import { SellerDialog } from "@/features/sellers/seller-dialog";
+import { Pagination, PaginationEntries, usePagination } from "@/components/pagination";
+import {
+  directoryPath,
+  errorMessage,
+  type ApiAddress,
+  type ApiCustomer,
+  type DirectoryFilters,
+  type PaginatedResponse,
+} from "@/lib/api";
 
-/** Filters the sample customer directory before applying shared list pagination. */
+/** Shares private server search, paging and refresh without mixing directory-specific writes. */
+function useAccountDirectory<T>(kind: "customers" | "sellers") {
+  const { request } = useActions();
+  const [filters, setFilters] = useState<
+    DirectoryFilters & { revision: number }
+  >({
+    query: "",
+    archived: false,
+    page: 1,
+    perPage: 10,
+    revision: 0,
+  });
+  const [result, setResult] = useState<PaginatedResponse<T> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  /** Fetch only the requested account page; older responses cannot replace newer filters. */
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    /** Preserve the API's full total and metadata without slicing its already-paginated data. */
+    async function load() {
+      try {
+        const response = await request<PaginatedResponse<T>>(
+          directoryPath(kind, filters),
+          "GET",
+          undefined,
+          { signal: controller.signal },
+        );
+        if (!active) return;
+        const lastPage = Math.max(1, response.meta.last_page);
+        if (filters.page > lastPage) {
+          setFilters({ ...filters, page: lastPage });
+          return;
+        }
+        setResult(response);
+        setLoading(false);
+      } catch (cause) {
+        if (active) {
+          setError(errorMessage(cause, `Unable to load your ${kind}.`));
+          setLoading(false);
+        }
+      }
+    }
+    const timer = setTimeout(
+      /** Debounce typing without loading the entire account directory. */ () => {
+        void load();
+      },
+      filters.query ? 250 : 0,
+    );
+    /** Account changes, navigation and superseded searches invalidate this response. */
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [request, filters, kind]);
+
+  /** Starts loading immediately so stale rows disappear while filters or page size change. */
+  function updateFilters(values: Partial<typeof filters> = {}) {
+    setLoading(true);
+    setError("");
+    setFilters(
+      /** Preserve unaffected filters while permitting an explicit retry of the same query. */
+      (current) => ({ ...current, ...values, revision: current.revision + 1 }),
+    );
+  }
+
+  /** New records appear in the active list; other mutations preserve the search. */
+  function reload(resetFilters = false) {
+    updateFilters(resetFilters ? { query: "", archived: false, page: 1 } : {});
+  }
+
+  const controls = {
+    page: result?.meta.current_page ?? filters.page,
+    perPage: filters.perPage,
+    total: result?.meta.total ?? 0,
+    disabled: loading,
+    onChange: updateFilters,
+  };
+  return { filters, result, loading, error, controls, updateFilters, reload };
+}
+
+/** The customer directory requires an account and never renders static prototype customers. */
 export function CustomersScreen() {
-  const state = usePrototypeState();
-  const { commit, notify } = useActions();
-  const [query, setQuery] = useState("");
-  const [add, setAdd] = useState(false);
-  const [customerId, setCustomerId] = useState<string | null>(null);
-  const [newAddress, setNewAddress] = useState(false);
-  const [location, setLocation] = useState<Address | null>(null);
-  const selected = state.customers.find(
-    (customer) => customer.id === customerId,
+  const { session } = useActions();
+  if (session) return <AccountCustomersScreen key={session.user.id} />;
+  return (
+    <EmptyState
+      title="Sign in to view your customers"
+      action={<LinkButton href="/login">Sign in</LinkButton>}
+    >
+      Customer records are saved privately to your rider account.
+    </EmptyState>
   );
-  const customers = state.customers.filter((customer) =>
-    `${customer.name} ${customer.phone} ${customer.addresses.map((address) => address.text).join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  const pagination = usePagination(customers, query);
+}
+
+/** Manages only the authenticated rider's real customers and separate delivery addresses. */
+function AccountCustomersScreen() {
+  const { request, notify } = useActions();
+  const { filters, result, loading, error, controls, updateFilters, reload } =
+    useAccountDirectory<ApiCustomer>("customers");
+  const customers = result?.data ?? [];
+  const meta = result?.meta;
+  const [selected, setSelected] = useState<ApiCustomer | null>(null);
+  const [editing, setEditing] = useState<ApiCustomer | "new" | null>(null);
+  const [editingAddress, setEditingAddress] = useState<
+    ApiAddress | "new" | null
+  >(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  /** Saves allowed identity fields without copying account records into the prototype store. */
+  async function saveCustomer(values: CustomerValues) {
+    if (!editing) return;
+    const creating = editing === "new";
+    const url = editing === "new" ? "/customers" : "/customers/" + editing.id;
+    const { data } = await request<{ data: ApiCustomer }>(
+      url,
+      creating ? "POST" : "PATCH",
+      values,
+    );
+    if (selected?.id === data.id) setSelected(data);
+    reload(creating);
+    notify(creating ? "Customer saved to your account." : "Customer updated.");
+  }
+
+  /** Archives/restores a customer while retaining its identity and address history. */
+  async function changeArchive(customer: ApiCustomer) {
+    if (busy) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      const restoring = !!customer.archived_at;
+      await request(
+        "/customers/" + customer.id + (restoring ? "/restore" : ""),
+        restoring ? "POST" : "DELETE",
+      );
+      setSelected(null);
+      reload();
+      notify(
+        restoring
+          ? "Customer restored."
+          : "Customer archived. You can restore it from Archived records.",
+      );
+    } catch (cause) {
+      setActionError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Saves address text/label under the selected owned customer; GPS is never included. */
+  async function saveAddress(values: AddressValues) {
+    if (!selected || !editingAddress) return;
+    const creating = editingAddress === "new";
+    const url =
+      "/customers/" +
+      selected.id +
+      "/addresses" +
+      (editingAddress === "new" ? "" : "/" + editingAddress.id);
+    const { data } = await request<{ data: ApiCustomer }>(
+      url,
+      creating ? "POST" : "PATCH",
+      values,
+    );
+    setSelected(data);
+    reload();
+    notify(creating ? "Separate address saved." : "Address details updated.");
+  }
+
+  /** Archives/restores one child address without changing other addresses or its GPS evidence. */
+  async function changeAddressArchive(address: ApiAddress) {
+    if (!selected || busy) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      const restoring = !!address.archived_at;
+      const url =
+        "/customers/" +
+        selected.id +
+        "/addresses/" +
+        address.id +
+        (restoring ? "/restore" : "");
+      await request(url, restoring ? "POST" : "DELETE");
+      const { data } = await request<{ data: ApiCustomer }>(
+        "/customers/" + selected.id,
+      );
+      setSelected(data);
+      reload();
+      notify(restoring ? "Address restored." : "Address archived.");
+    } catch (cause) {
+      setActionError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Clears customer-specific UI when the profile closes. */
+  function closeProfile() {
+    if (busy) return;
+    setSelected(null);
+    setEditingAddress(null);
+    setActionError("");
+  }
+
   return (
     <>
       <PageHeading
         eyebrow="FAMILIAR FACES, EASIER VISITS"
         title="Your customers"
-        description="One customer, distinct addresses, and a pin you can trust."
+        description="Private customer records, distinct addresses, and clear contact details."
       >
-        <Button onClick={() => setAdd(true)}>
+        <Button
+          onClick={/** Open a fresh record form. */ () => setEditing("new")}
+        >
           <Plus size={17} />
           Add customer
         </Button>
       </PageHeading>
-      <div className="section-summary">
-        <Badge tone="green">
-          <Users size={14} />
-          {state.customers.length} customers
-        </Badge>
-        <span>
-          {
-            state.customers.filter((customer) =>
-              customer.addresses.some((address) => address.latitude === null),
-            ).length
-          }{" "}
-          with an unsaved location
-        </span>
-      </div>
+      {meta && !loading && !error && (
+        <div className="section-summary">
+          <Badge tone="green">
+            <Users size={14} /> {meta.total.toLocaleString()} customers
+          </Badge>
+        </div>
+      )}
       <Card>
         <div className="table-toolbar">
-          <PaginationEntries
-            {...pagination.controls}
-            label="Customers pagination"
-          />
+          <div className="toolbar-filters">
+            <select
+              aria-label="Customer record status"
+              value={filters.archived ? "archived" : "active"}
+              onChange={
+                /** Status changes begin at the first matching page. */ (
+                  event,
+                ) =>
+                  updateFilters({
+                    archived: event.target.value === "archived",
+                    page: 1,
+                  })
+              }
+            >
+              <option value="active">Active customers</option>
+              <option value="archived">Archived customers</option>
+            </select>
+            <Button
+              variant="ghost"
+              disabled={loading}
+              onClick={/** Refresh only on request. */ () => reload()}
+            >
+              <RefreshCw size={16} /> Refresh
+            </Button>
+          </div>
+        </div>
+        <div className="table-toolbar">
+          <PaginationEntries {...controls} label="Customers pagination" />
           <div className="input-with-icon">
             <Search size={17} />
             <input
+              type="search"
               aria-label="Search customer directory"
-              placeholder="Search name, phone or address..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name, phone or address…"
+              maxLength={100}
+              value={filters.query}
+              onChange={
+                /** Search across all owned customers, starting on page one. */ (
+                  event,
+                ) => updateFilters({ query: event.target.value, page: 1 })
+              }
             />
           </div>
         </div>
@@ -107,237 +330,317 @@ export function CustomersScreen() {
               </tr>
             </thead>
             <tbody>
-              {pagination.items.map((customer) => (
-                <tr key={customer.id}>
-                  <td>
-                    <button
-                      className="customer-link"
-                      onClick={() => setCustomerId(customer.id)}
-                    >
-                      <Avatar name={customer.name} color={customer.color} />
-                      <span>
-                        <strong>{customer.name}</strong>
-                        <small>
-                          {
-                            state.parcels.filter(
-                              (parcel) => parcel.customerId === customer.id,
-                            ).length
-                          }{" "}
-                          parcel record(s)
-                        </small>
-                      </span>
-                    </button>
-                  </td>
-                  <td>{customer.phone}</td>
-                  <td>
-                    <span className="address-cell">
-                      {customer.addresses[0]?.text}
-                    </span>
-                  </td>
-                  <td>
-                    <Badge
-                      tone={
-                        customer.addresses.every(
-                          (address) => address.latitude !== null,
-                        )
-                          ? "green"
-                          : "amber"
-                      }
-                    >
-                      {customer.addresses.every(
-                        (address) => address.latitude !== null,
-                      )
-                        ? "Pin saved"
-                        : "No pin"}
-                    </Badge>
-                    <small className="cell-subtext">
-                      {customer.addresses.length} address(es)
-                    </small>
-                  </td>
-                  <td>
-                    <button
-                      className="row-open"
-                      onClick={() => setCustomerId(customer.id)}
-                      aria-label={`Open ${customer.name}'s customer profile`}
-                    >
-                      <ChevronRight size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {!loading &&
+                !error &&
+                customers.map(
+                  /** Render one owned customer and its active addresses. */ (
+                    customer,
+                  ) => {
+                    const addresses = customer.addresses.filter(
+                      /** Keep separately archived addresses out of the active summary. */ (
+                        address,
+                      ) => !address.archived_at,
+                    );
+                    const hasPin = addresses.some(
+                      /** Mark a location verified only when delivery evidence exists. */ (
+                        address,
+                      ) => !!address.verified_at,
+                    );
+                    return (
+                      <tr key={customer.id}>
+                        <td>
+                          <button
+                            className="customer-link"
+                            onClick={
+                              /** Open the selected customer with cleared action errors. */ () => {
+                                setActionError("");
+                                setSelected(customer);
+                              }
+                            }
+                          >
+                            <Avatar name={customer.name} />
+                            <span>
+                              <strong>{customer.name}</strong>
+                              <small>
+                                {addresses.length} active address(es)
+                              </small>
+                            </span>
+                          </button>
+                        </td>
+                        <td>{customer.phone || "Not provided"}</td>
+                        <td>
+                          <span className="address-cell">
+                            {addresses[0]?.text || "Address not provided"}
+                          </span>
+                        </td>
+                        <td>
+                          <Badge
+                            tone={
+                              customer.archived_at
+                                ? "gray"
+                                : hasPin
+                                  ? "green"
+                                  : "amber"
+                            }
+                          >
+                            {customer.archived_at
+                              ? "Archived"
+                              : hasPin
+                                ? "Pin verified"
+                                : "No verified pin"}
+                          </Badge>
+                        </td>
+                        <td>
+                          <button
+                            className="row-open"
+                            aria-label={
+                              "Open " + customer.name + "'s customer profile"
+                            }
+                            onClick={
+                              /** Open the selected customer with cleared action errors. */ () => {
+                                setActionError("");
+                                setSelected(customer);
+                              }
+                            }
+                          >
+                            <ChevronRight size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  },
+                )}
             </tbody>
           </table>
-          {!customers.length && (
+          {loading ? (
+            <div className="card-body">
+              <p role="status">Loading your customers…</p>
+            </div>
+          ) : error ? (
+            <div className="card-body form-stack" role="alert">
+              <p>{error}</p>
+              <Button
+                variant="secondary"
+                onClick={
+                  /** Retry without falling back to sample data. */ () =>
+                    reload()
+                }
+              >
+                Try again
+              </Button>
+            </div>
+          ) : !customers.length ? (
             <EmptyState
-              title="No matching customers"
-              action={
-                <Button onClick={() => setAdd(true)}>
-                  <Plus size={16} />
-                  Add customer
-                </Button>
+              title={
+                filters.archived
+                  ? "No archived customers"
+                  : "No matching customers"
               }
             >
-              Try another name or add a customer.
+              Try another search or add a customer.
             </EmptyState>
-          )}
+          ) : null}
         </div>
-        <Pagination {...pagination.controls} label="Customers pagination" />
+        {meta && !error && (
+          <Pagination {...controls} label="Customers pagination" />
+        )}
       </Card>
-      <NewCustomerDialog open={add} onClose={() => setAdd(false)} />
+
+      {editing && (
+        <CustomerDialog
+          open
+          onClose={
+            /** Clear the form state when its dialog closes. */ () =>
+              setEditing(null)
+          }
+          onSave={saveCustomer}
+          initialValues={
+            editing === "new"
+              ? undefined
+              : { name: editing.name, phone: editing.phone }
+          }
+        />
+      )}
       {selected && (
         <Modal
           open
           drawer
-          onClose={() => {
-            setCustomerId(null);
-            setNewAddress(false);
-          }}
+          onClose={closeProfile}
           title="Customer profile"
-          description="Addresses and delivery records stay linked."
+          description="Private account record. Addresses keep their separate identities."
         >
           <div className="dialog-body form-stack">
             <div className="person-profile">
-              <Avatar name={selected.name} color={selected.color} />
+              <Avatar name={selected.name} />
               <h3>{selected.name}</h3>
-              <p>{selected.phone}</p>
+              <p>{selected.phone || "Phone not provided"}</p>
+              <Badge tone={selected.archived_at ? "gray" : "green"}>
+                {selected.archived_at ? "Archived customer" : "Active customer"}
+              </Badge>
             </div>
+            {actionError && (
+              <div className="form-error" role="alert">
+                {actionError}
+              </div>
+            )}
             <div className="section-title">
               <h3>Delivery addresses</h3>
-              <button
-                className="text-link"
-                onClick={() => setNewAddress((value) => !value)}
-              >
-                <Plus size={14} />
-                Add address
-              </button>
-            </div>
-            {newAddress && (
-              <form
-                className="inset-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const values = new FormData(event.currentTarget);
-                  const address: Address = {
-                    id: crypto.randomUUID(),
-                    label: String(values.get("label")).trim(),
-                    text:
-                      String(values.get("text")).trim() ||
-                      "Address not provided",
-                    latitude: null,
-                    longitude: null,
-                    distanceKm: 0,
-                    minutes: 0,
-                  };
-                  commit(
-                    (current) => ({
-                      ...current,
-                      customers: current.customers.map((customer) =>
-                        customer.id !== selected.id
-                          ? customer
-                          : {
-                              ...customer,
-                              addresses: [...customer.addresses, address],
-                            },
-                      ),
-                    }),
-                    "New address saved separately.",
-                  );
-                  setNewAddress(false);
-                }}
-              >
-                <Field label="Address label" required>
-                  <input
-                    name="label"
-                    placeholder="e.g. Work"
-                    required
-                    maxLength={50}
-                  />
-                </Field>
-                <Field label="Address / landmark (optional)">
-                  <input
-                    name="text"
-                    maxLength={300}
-                    placeholder="Street, barangay or landmark"
-                  />
-                </Field>
-                <Button type="submit">Save address</Button>
-              </form>
-            )}
-            {selected.addresses.map((address) => (
-              <div className="address-card" key={address.id}>
-                <div>
-                  <span>
-                    {address.latitude === null ? (
-                      <MapPinOff size={19} />
-                    ) : (
-                      <MapPin size={19} />
-                    )}
-                  </span>
-                  <div>
-                    <h4>{address.label}</h4>
-                    <p>{address.text}</p>
-                    <Badge tone={address.latitude === null ? "amber" : "green"}>
-                      {address.latitude === null
-                        ? "Manual delivery available"
-                        : "Confirmed pin saved"}
-                    </Badge>
-                  </div>
-                </div>
-                <button
-                  className="text-link"
-                  onClick={() => {
-                    if (
-                      address.verifiedAt ||
-                      state.parcels.some(
-                        (parcel) =>
-                          parcel.customerId === selected.id &&
-                          parcel.addressId === address.id &&
-                          parcel.status === "delivered",
-                      )
-                    )
-                      setLocation(address);
-                    else
-                      notify(
-                        "Complete a delivery to this address before saving a verified location.",
-                      );
-                  }}
+              {!selected.archived_at && (
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={
+                    /** Add a separate address under this customer. */ () =>
+                      setEditingAddress("new")
+                  }
                 >
-                  <Pencil size={13} />
-                  {address.latitude === null
-                    ? "Add after handover"
-                    : "Review / correct pin"}
-                </button>
-              </div>
-            ))}
-            <h3>Parcel history</h3>
-            <div className="mini-record-list">
-              {state.parcels
-                .filter((parcel) => parcel.customerId === selected.id)
-                .map((parcel) => (
-                  <LinkButton
-                    key={parcel.id}
-                    href={`/deliveries/${parcel.id}`}
-                    variant="ghost"
-                  >
-                    {parcel.reference}
-                    <span>{money(parcel.pricing.total)}</span>
-                    <ChevronRight size={14} />
-                  </LinkButton>
-                ))}
+                  <Plus size={15} />
+                  Add address
+                </Button>
+              )}
+            </div>
+            {selected.addresses.map(
+              /** Render each address with its independent archive state. */ (
+                address,
+              ) => (
+                <div
+                  className="address-card account-address-card"
+                  key={address.id}
+                >
+                  <div>
+                    <span>
+                      {address.verified_at ? (
+                        <MapPin size={19} />
+                      ) : (
+                        <MapPinOff size={19} />
+                      )}
+                    </span>
+                    <div>
+                      <h4>{address.label}</h4>
+                      <p>{address.text || "Address not provided"}</p>
+                      <Badge
+                        tone={
+                          address.archived_at
+                            ? "gray"
+                            : address.verified_at
+                              ? "green"
+                              : "amber"
+                        }
+                      >
+                        {address.archived_at
+                          ? "Archived address"
+                          : address.verified_at
+                            ? "Verified pin saved"
+                            : "No verified GPS pin"}
+                      </Badge>
+                    </div>
+                  </div>
+                  {!selected.archived_at && (
+                    <div className="account-address-actions">
+                      {!address.archived_at && (
+                        <Button
+                          variant="ghost"
+                          disabled={busy}
+                          aria-label={"Edit " + address.label + " address"}
+                          onClick={
+                            /** Edit only this address metadata. */ () =>
+                              setEditingAddress(address)
+                          }
+                        >
+                          <Pencil size={14} />
+                          Edit
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        disabled={busy}
+                        aria-label={
+                          (address.archived_at ? "Restore " : "Archive ") +
+                          address.label +
+                          " address"
+                        }
+                        onClick={
+                          /** Archive or restore this address through its owned parent. */ () =>
+                            void changeAddressArchive(address)
+                        }
+                      >
+                        {address.archived_at ? (
+                          <RotateCcw size={14} />
+                        ) : (
+                          <Archive size={14} />
+                        )}
+                        {address.archived_at ? "Restore" : "Archive"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
+            {!selected.addresses.length && (
+              <p className="small-muted">
+                No addresses added yet. An address can be saved without a GPS
+                pin.
+              </p>
+            )}
+            <div className="notice notice-muted">
+              <MapPinOff size={18} />
+              <p>
+                Verified GPS follows a successful delivery. Editing an address
+                here changes only its label and text.
+              </p>
             </div>
           </div>
-          <footer className="dialog-footer">
-            <Button variant="secondary" onClick={() => setCustomerId(null)}>
-              Close profile
+          <footer className="dialog-footer account-profile-actions">
+            {!selected.archived_at && (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={
+                  /** Edit the selected customer identity. */ () =>
+                    setEditing(selected)
+                }
+              >
+                <Pencil size={15} />
+                Edit customer
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={
+                /** Archive or restore this customer. */ () =>
+                  void changeArchive(selected)
+              }
+            >
+              {selected.archived_at ? (
+                <RotateCcw size={15} />
+              ) : (
+                <Archive size={15} />
+              )}
+              {busy
+                ? "Saving…"
+                : selected.archived_at
+                  ? "Restore customer"
+                  : "Archive customer"}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={closeProfile}>
+              Close
             </Button>
           </footer>
         </Modal>
       )}
-      {selected && location && (
-        <LocationDialog
-          customer={selected}
-          address={location}
-          onClose={() => setLocation(null)}
+      {selected && editingAddress && (
+        <AddressDialog
+          onClose={
+            /** Clear the address form when it closes. */ () =>
+              setEditingAddress(null)
+          }
+          onSave={saveAddress}
+          initialValues={
+            editingAddress === "new"
+              ? undefined
+              : { label: editingAddress.label, text: editingAddress.text }
+          }
         />
       )}
     </>
