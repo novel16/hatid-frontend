@@ -1,12 +1,28 @@
+import type {
+  FeeMode,
+  ParcelStatus,
+  PaymentMethod,
+  Pricing,
+} from "./prototype/types";
+import type { PaginationState } from "./pagination";
+
 export interface AccountPreferences {
   deliveryAlerts: boolean;
   collectionAlerts: boolean;
   compactView: boolean;
 }
 
+export type Vehicle = "motorcycle" | "bicycle" | "car";
+
+export interface ApiRequestOptions {
+  responseType?: "json" | "blob";
+  signal?: AbortSignal;
+}
+
 export interface SettingsUpdate {
   name?: string;
   phone?: string | null;
+  vehicle?: Vehicle;
   preferences?: Partial<AccountPreferences>;
 }
 
@@ -29,11 +45,154 @@ export interface PaginatedResponse<T> {
   };
 }
 
+export interface DirectoryFilters extends PaginationState {
+  query: string;
+  archived: boolean;
+}
+
+/** Encodes account directory search and server pagination without accepting an owner from the client. */
+export function directoryPath(
+  kind: "customers" | "sellers",
+  filters: DirectoryFilters,
+): string {
+  const params = new URLSearchParams({
+    page: String(filters.page),
+    per_page: String(filters.perPage),
+    archived: filters.archived ? "1" : "0",
+  });
+  const query = filters.query.trim();
+  if (query) params.set("q", query);
+  return `/${kind}?${params}`;
+}
+
+export interface NewBatch {
+  name: string;
+  start: string;
+  end: string;
+}
+
+export interface ApiBatch extends NewBatch {
+  id: number;
+  period: "current" | "previous" | "upcoming";
+  created_at: string;
+}
+
+export interface BatchPage extends PaginatedResponse<ApiBatch> {
+  current_week: NewBatch;
+}
+
+export interface NewCustomer {
+  name: string;
+  phone: string | null;
+  address: { label: string; text: string | null };
+}
+
+export interface ApiAddress {
+  id: number;
+  label: string;
+  text: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  verified_at: string | null;
+  gps_accuracy: number | null;
+  gps_captured_at: string | null;
+  location_corrected: boolean;
+  location_version: number;
+  archived_at: string | null;
+}
+
+export interface ApiCustomer {
+  id: number;
+  name: string;
+  phone: string | null;
+  addresses: ApiAddress[];
+  archived_at: string | null;
+}
+
+export interface NewSeller {
+  name: string;
+  contact: string | null;
+  mode: FeeMode;
+  fee: number;
+}
+
+export interface ApiSeller extends NewSeller {
+  id: number;
+  archived_at: string | null;
+}
+
+export interface NewParcel {
+  operation_id: string;
+  batch_id: number;
+  customer_id: number;
+  address_id: number;
+  seller_id: number;
+  description: string;
+  note: string;
+  quote: number;
+  fee: number;
+  mode: FeeMode;
+  expected_method: PaymentMethod;
+  override_reason?: string;
+}
+
+export interface ApiParcel {
+  id: number;
+  reference: string;
+  description: string;
+  note: string | null;
+  customer: { id: number; name: string; phone: string | null };
+  address: ApiAddress;
+  seller: { id: number; name: string };
+  batch: { id: number; name: string; start: string; end: string };
+  pricing: Pricing;
+  expected_method: PaymentMethod;
+  override_reason: string | null;
+  status: ParcelStatus;
+  retry_at: string | null;
+  receipt: {
+    method: PaymentMethod;
+    amount: number;
+    reference: string | null;
+    confirmed_at: string;
+  } | null;
+  attempts?: {
+    id: number;
+    outcome: ParcelStatus;
+    note: string;
+    retry_at: string | null;
+    at: string;
+  }[];
+  created_at: string;
+}
+
+export interface ApiDelivery {
+  key: string;
+  customer: ApiParcel["customer"];
+  address: ApiParcel["address"];
+  parcels: ApiParcel[];
+}
+
+export interface MapCandidate extends ApiDelivery {
+  duration_seconds: number | null;
+  distance_meters: number | null;
+}
+
+export interface MapOverview {
+  vehicle: Vehicle | null;
+  configured: boolean;
+  quota: { used: number; limit: number; window: "rolling_24h" };
+  candidates: MapCandidate[];
+  compared_count: number;
+  estimated_at: string | null;
+}
+
 export interface ApiUser {
   id: number;
   name: string;
   email: string;
   phone: string | null;
+  vehicle: Vehicle | null;
   preferences: AccountPreferences;
   role: "rider" | "admin";
   email_verified_at: string | null;
@@ -139,6 +298,14 @@ export function errorMessage(
   return error instanceof Error ? error.message : fallback;
 }
 
+/** Reuse actionable field errors across account forms, with the normal connection fallback. */
+export function validationMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return Object.values(error.errors).flat().join(" ") || error.message;
+  }
+  return errorMessage(error);
+}
+
 export function workspacePath(value: string | null): string {
   const base = "https://hatid.invalid";
   try {
@@ -160,11 +327,13 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost").replace(
   "",
 );
 
+/** Share cookie-free JSON/binary transport, cancellation and sanitized errors across every account request. */
 export async function apiRequest<T>(
   path: string,
   method = "GET",
   data?: unknown,
   token?: string,
+  options: ApiRequestOptions = {},
 ): Promise<T> {
   let response: Response;
   try {
@@ -172,9 +341,12 @@ export async function apiRequest<T>(
       method,
       credentials: "omit",
       cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
       headers: {
-        Accept: "application/json",
+        Accept:
+          options.responseType === "blob" ? "image/png" : "application/json",
         ...(data !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -188,6 +360,20 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 204) return undefined as T;
+  if (response.ok && options.responseType === "blob") {
+    if (
+      !response.headers
+        .get("Content-Type")
+        ?.toLowerCase()
+        .startsWith("image/png")
+    ) {
+      throw new ApiError(
+        "Hatid returned an unreadable map tile. Please try again.",
+        response.status,
+      );
+    }
+    return (await response.blob()) as T;
+  }
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -213,7 +399,8 @@ export async function apiRequest<T>(
   if (payload === null)
     throw new ApiError(
       "Hatid returned an unreadable response. Please try again.",
-      response.status,
+      // A successful status without its body cannot confirm whether a mutation committed.
+      0,
     );
   return payload as T;
 }
@@ -224,7 +411,10 @@ export const authApi = {
       ...data,
       email: normalizeEmail(data.email),
     }),
-  register: (data: Credentials & NewPassword & { name: string }) =>
+  /** Signup passes the rider's explicit vehicle; Laravel validates the allowed choices. */
+  register: (
+    data: Credentials & NewPassword & { name: string; vehicle?: Vehicle },
+  ) =>
     apiRequest<{ data: AuthSession }>("/auth/register", "POST", {
       ...data,
       name: data.name.trim(),

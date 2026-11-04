@@ -21,6 +21,7 @@ import {
   parseStoredSession,
   verifyRiderSession,
   type ApiUser,
+  type ApiRequestOptions,
   type ApiToken,
   type SettingsUpdate,
   type AuthSession,
@@ -40,7 +41,12 @@ interface AppActions {
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
   enterDemo: () => void;
-  request: <T>(path: string, method?: string, data?: unknown) => Promise<T>;
+  request: <T>(
+    path: string,
+    method?: string,
+    data?: unknown,
+    options?: ApiRequestOptions,
+  ) => Promise<T>;
   saveSettings: (data: SettingsUpdate) => Promise<void>;
   revokeDevice: (device: Pick<ApiToken, "id" | "is_current">) => Promise<void>;
   signOutEverywhere: () => Promise<void>;
@@ -170,11 +176,22 @@ export function Providers({ children }: { children: ReactNode }) {
 
   /** Shares Bearer errors and discards responses from an account that has since signed out. */
   const request = useCallback(
-    async <T,>(path: string, method = "GET", data?: unknown): Promise<T> => {
+    async <T,>(
+      path: string,
+      method = "GET",
+      data?: unknown,
+      options?: ApiRequestOptions,
+    ): Promise<T> => {
       if (!accessToken) throw new ApiError("Sign in to continue.", 401);
       const attempt = authVersion.current;
       try {
-        const result = await apiRequest<T>(path, method, data, accessToken);
+        const result = await apiRequest<T>(
+          path,
+          method,
+          data,
+          accessToken,
+          options,
+        );
         if (attempt !== authVersion.current) {
           throw new ApiError("Your sign-in changed. Please try again.", 0);
         }

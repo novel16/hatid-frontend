@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+.map-account-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 20px 0;
+}
+.geo-map-wrap {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.geo-map-wrap .leaflet-container {
+  font: inherit;
+}
+.geo-map-wrap .leaflet-control-attribution {
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 :root {
   --ink: #142e2a;
   --muted: #61746f;
@@ -1261,6 +1281,18 @@ small {
 }
 .pagination-mobile {
   display: none;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination-mobile button {
+  min-height: 44px;
+  min-width: 68px;
+  border-color: var(--line);
 }
 @container (max-width: 650px) {
   .pagination-layout {
@@ -1272,21 +1304,17 @@ small {
   }
   .pagination-mobile {
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
     border-top: 1px solid var(--line-soft);
     padding-top: 14px;
-    text-align: center;
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
   }
-  .pagination-mobile button {
-    min-height: 44px;
-    min-width: 68px;
-    border-color: var(--line);
-  }
+}
+.pagination-compact .pagination-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.pagination-compact .pagination-mobile {
+  display: grid;
+  border-top: 0;
+  padding-top: 0;
 }
 @media (pointer: coarse) {
   .pagination button {
@@ -1523,6 +1551,84 @@ small {
 .input-with-icon input:focus-visible {
   outline: 0;
 }
+.search-select {
+  min-width: 0;
+}
+.search-select > .input-with-icon {
+  width: 100%;
+}
+.search-select-toggle {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  min-height: 39px;
+  padding: 0 3px;
+  flex-shrink: 0;
+}
+.search-select-panel {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+}
+.search-select-options > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  scroll-margin-block: 90px 80px;
+}
+.search-select-options > button.search-select-active,
+.search-select-options > button:hover {
+  background: var(--mint);
+}
+.search-select-options strong,
+.search-select-options small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.search-select-options small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.search-select-message,
+.search-select-clear {
+  padding: 12px;
+  font-size: 12px;
+}
+.search-select-panel .pagination-layout {
+  padding: 10px;
+}
+.toolbar-filters > .search-select {
+  flex: 0 1 260px;
+  min-width: 180px;
+}
+.toolbar-filters .search-select input {
+  font-size: 11px;
+}
+.search-select-floating {
+  position: relative;
+}
+.search-select-floating .search-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline: 0;
+  z-index: 45;
+  box-shadow: 0 10px 28px #082d2220;
+}
+.delivery-list-card {
+  overflow: visible;
+}
 .table-toolbar > .input-with-icon {
   width: min(360px, 50%);
 }
@@ -1735,6 +1841,12 @@ small {
   background: #eef3e9;
   color: var(--muted);
   border-radius: 9px;
+}
+.form-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }
 .entry-layout {
   display: grid;
@@ -2324,6 +2436,15 @@ small {
 .dialog-wide {
   width: min(750px, calc(100vw - 32px));
 }
+.dialog.parcel-entry-dialog {
+  width: min(1080px, calc(100vw - 32px));
+}
+.parcel-entry-actions {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  margin-inline: -24px;
+  margin-bottom: -22px;
+}
 .dialog-inner {
   max-height: 90dvh;
   overflow-y: auto;
@@ -2496,48 +2617,6 @@ body:has(dialog[open]) {
 }
 .stop-estimate small {
   font-size: 11px;
-  color: var(--muted);
-}
-.customer-picker-list {
-  max-height: 390px;
-  overflow-y: auto;
-  padding-top: 10px;
-}
-.customer-picker-list > button {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 14px 4px;
-  width: 100%;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--line-soft);
-  text-align: left;
-}
-.customer-picker-list > button:hover {
-  background: #f8faf3;
-}
-.customer-picker-list > button > span:not(.avatar):not(.badge) {
-  flex: 1;
-  min-width: 0;
-}
-.customer-picker-list strong,
-.customer-picker-list small {
-  display: block;
-}
-.customer-picker-list strong {
-  font-size: 13px;
-}
-.customer-picker-list small {
-  font-size: 10px;
-  line-height: 1.8;
-  color: var(--muted);
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.customer-picker-list > button > svg {
   color: var(--muted);
 }
 .guide-steps > div {
@@ -2894,11 +2973,13 @@ body:has(dialog[open]) {
 .seller-directory-card h2 {
   font-size: 19px;
   letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
 }
 .seller-directory-card > p {
   font-size: 12px;
   color: var(--muted);
   margin: 6px 0 14px;
+  overflow-wrap: anywhere;
 }
 .seller-directory-stats {
   border-top: 1px solid var(--line-soft);
@@ -2923,6 +3004,7 @@ body:has(dialog[open]) {
 }
 .seller-directory-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 18px;
   align-items: center;
@@ -2986,6 +3068,14 @@ body:has(dialog[open]) {
   margin-top: 15px;
   padding-left: 43px;
 }
+.address-card > .account-address-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.account-profile-actions {
+  flex-wrap: wrap;
+}
 .inset-form {
   padding: 18px;
   border-radius: 10px;
@@ -3030,6 +3120,7 @@ body:has(dialog[open]) {
 .batch-card h2 {
   font-size: 24px;
   letter-spacing: -0.7px;
+  overflow-wrap: anywhere;
 }
 .batch-card > p {
   font-size: 13px;
@@ -4873,7 +4964,7 @@ body:has(dialog[open]) {
     border-top: 1px solid #e1e9d7;
     box-shadow: 0 -3px 18px #294c1f05;
   }
-  .mobile-bottom-nav > a {
+  .mobile-bottom-nav > :is(a, button) {
     flex: 1;
     display: flex;
     align-items: center;
@@ -4883,7 +4974,13 @@ body:has(dialog[open]) {
     color: var(--muted);
     font-size: 11px;
   }
-  .mobile-bottom-nav > a > span {
+  .mobile-bottom-nav > button {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+  }
+  .mobile-bottom-nav > :is(a, button) > span {
     display: grid;
     place-items: center;
     width: 42px;
@@ -4900,7 +4997,7 @@ body:has(dialog[open]) {
   .mobile-bottom-nav > a.active > span {
     background: #eaf4df;
   }
-  .mobile-bottom-nav > a.mobile-add > span {
+  .mobile-bottom-nav > .mobile-add > span {
     background: var(--brand);
     color: #fff;
     border-radius: 11px;
@@ -4909,7 +5006,7 @@ body:has(dialog[open]) {
     margin-top: -7px;
     box-shadow: 0 3px 8px #006b5415;
   }
-  .mobile-bottom-nav > a.mobile-add small {
+  .mobile-bottom-nav > .mobile-add small {
     color: var(--brand);
     margin-top: 3px;
   }
@@ -5538,6 +5635,10 @@ body:has(dialog[open]) {
   }
   .dialog-body {
     padding: 20px 18px;
+  }
+  .parcel-entry-actions {
+    margin-inline: -18px;
+    margin-bottom: -20px;
   }
   .dialog-footer {
     padding: 15px 18px;

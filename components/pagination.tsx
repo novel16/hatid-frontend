@@ -20,6 +20,7 @@ interface PaginationEntriesProps {
 interface PaginationProps extends PaginationEntriesProps {
   page: number;
   total: number;
+  compact?: boolean;
 }
 
 /** Shares the entry selector above each list while resetting changed sizes to page one. */
@@ -57,7 +58,7 @@ export function PaginationEntries({
   );
 }
 
-/** One controlled footer for local lists or Laravel pagination metadata. */
+/** Shares full-list navigation and compact Prev/Page/Next navigation for modal pickers. */
 export function Pagination({
   page,
   perPage,
@@ -65,6 +66,7 @@ export function Pagination({
   onChange,
   disabled = false,
   label = "List pagination",
+  compact = false,
 }: PaginationProps) {
   const current = getPagination({ page, perPage, total });
 
@@ -75,63 +77,71 @@ export function Pagination({
   }
 
   return (
-    <nav className="pagination" aria-label={label} aria-busy={disabled}>
+    <nav
+      className={compact ? "pagination pagination-compact" : "pagination"}
+      aria-label={label}
+      aria-busy={disabled}
+    >
       <div className="pagination-layout">
-        <p className="pagination-summary" role="status" aria-live="polite">
-          Showing {current.from.toLocaleString()}–{current.to.toLocaleString()}{" "}
-          of {total.toLocaleString()}
-        </p>
-        <div className="pagination-desktop">
-          <button
-            type="button"
-            aria-label="Previous page"
-            disabled={disabled || current.page === 1}
-            onClick={
-              /** Move to the preceding result page. */ () =>
-                changePage(current.page - 1)
-            }
-          >
-            <ChevronLeft size={16} />
-          </button>
-          {getPageNumbers(current.page, current.lastPage).map(
-            /** Keep current/nearby pages reachable by mouse and keyboard. */ (
-              value,
-            ) =>
-              typeof value === "number" ? (
-                <button
-                  type="button"
-                  key={value}
-                  aria-label={"Page " + value}
-                  aria-current={current.page === value ? "page" : undefined}
-                  disabled={disabled}
-                  onClick={
-                    /** Request this numbered page. */ () => changePage(value)
-                  }
-                >
-                  {value}
-                </button>
-              ) : (
-                <span
-                  key={value}
-                  className="pagination-ellipsis"
-                  aria-hidden="true"
-                >
-                  …
-                </span>
-              ),
-          )}
-          <button
-            type="button"
-            aria-label="Next page"
-            disabled={disabled || current.page === current.lastPage}
-            onClick={
-              /** Move to the following result page. */ () =>
-                changePage(current.page + 1)
-            }
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
+        {!compact && (
+          <p className="pagination-summary" role="status" aria-live="polite">
+            Showing {current.from.toLocaleString()}–
+            {current.to.toLocaleString()} of {total.toLocaleString()}
+          </p>
+        )}
+        {!compact && (
+          <div className="pagination-desktop">
+            <button
+              type="button"
+              aria-label="Previous page"
+              disabled={disabled || current.page === 1}
+              onClick={
+                /** Move to the preceding result page. */ () =>
+                  changePage(current.page - 1)
+              }
+            >
+              <ChevronLeft size={16} />
+            </button>
+            {getPageNumbers(current.page, current.lastPage).map(
+              /** Keep current/nearby pages reachable by mouse and keyboard. */ (
+                value,
+              ) =>
+                typeof value === "number" ? (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-label={"Page " + value}
+                    aria-current={current.page === value ? "page" : undefined}
+                    disabled={disabled}
+                    onClick={
+                      /** Request this numbered page. */ () => changePage(value)
+                    }
+                  >
+                    {value}
+                  </button>
+                ) : (
+                  <span
+                    key={value}
+                    className="pagination-ellipsis"
+                    aria-hidden="true"
+                  >
+                    …
+                  </span>
+                ),
+            )}
+            <button
+              type="button"
+              aria-label="Next page"
+              disabled={disabled || current.page === current.lastPage}
+              onClick={
+                /** Move to the following result page. */ () =>
+                  changePage(current.page + 1)
+              }
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
         <div className="pagination-mobile">
           <button
             type="button"
@@ -144,7 +154,7 @@ export function Pagination({
           >
             <ChevronLeft size={16} /> Prev
           </button>
-          <span>
+          <span role="status" aria-live="polite">
             Page {current.page} of {current.lastPage}
           </span>
           <button

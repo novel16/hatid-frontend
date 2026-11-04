@@ -5,6 +5,33 @@ export interface PaginationState {
   perPage: PageSize;
 }
 
+/** Searches and pages already-loaded demo options; account selects must use API pagination instead. */
+export function getSelectPage<T extends { name: string }>(
+  items: readonly T[],
+  query: string,
+  page: number,
+  describe?: (item: T) => string,
+) {
+  const search = query.trim().toLocaleLowerCase();
+  const matches = items.filter(
+    /** Include contextual text such as phone/address without replacing the displayed name. */
+    (item) =>
+      `${item.name} ${describe?.(item) ?? ""}`
+        .toLocaleLowerCase()
+        .includes(search),
+  );
+  const current = getPagination({ page, perPage: 10, total: matches.length });
+  return {
+    data: matches.slice(current.from ? current.from - 1 : 0, current.to),
+    meta: {
+      current_page: current.page,
+      last_page: current.lastPage,
+      per_page: 10,
+      total: current.total,
+    },
+  };
+}
+
 /** Bounds the visible range after filtering, deletion or a page-size change. */
 export function getPagination({
   page,

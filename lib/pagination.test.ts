@@ -1,6 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getPageNumbers, getPagination } from "./pagination.ts";
+import { getPageNumbers, getPagination, getSelectPage } from "./pagination.ts";
+
+/** Demo dropdowns search their already-loaded records while retaining ten-row paging and full totals. */
+test("local searchable selects paginate matches and search contextual text", () => {
+  const records = Array.from(
+    { length: 25 },
+    /** Keep stable identities across filtered result pages. */ (_, index) => ({
+      id: index + 1,
+      name: `Customer ${index + 1}`,
+      address: "Test street",
+    }),
+  );
+  const page = getSelectPage(records, "customer", 3);
+  assert.equal(page.data.length, 5);
+  assert.equal(page.data[0].id, 21);
+  assert.deepEqual(page.meta, {
+    current_page: 3,
+    last_page: 3,
+    per_page: 10,
+    total: 25,
+  });
+  assert.equal(
+    getSelectPage(
+      records,
+      "street",
+      1,
+      /** Addresses remain searchable without changing displayed labels. */ (
+        record,
+      ) => record.address,
+    ).meta.total,
+    25,
+  );
+  const empty = getSelectPage(records, "missing", 9);
+  assert.equal(empty.data.length, 0);
+  assert.equal(empty.meta.current_page, 1);
+  assert.equal(empty.meta.last_page, 1);
+});
 
 /** A middle page exposes only its own ten-entry range and the full result count. */
 test("ten entries keep the full total and calculate the visible range", () => {

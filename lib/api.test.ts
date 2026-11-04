@@ -4,12 +4,120 @@ import {
   ApiError,
   apiRequest,
   authApi,
+  directoryPath,
   parseStoredSession,
   verifyRiderSession,
   workspacePath,
+  validationMessage,
 } from "./api.ts";
 
 afterEach(() => mock.restoreAll());
+
+/** Search encoding and selected page sizes must reach the API instead of filtering one loaded page. */
+test("customer and seller directory requests preserve server search, archive filters and page sizes", () => {
+  for (const kind of ["customers", "sellers"] as const) {
+    for (const perPage of [10, 50, 100] as const) {
+      const url = new URL(
+        directoryPath(kind, {
+          query: "  [Dummy] & Santos  ",
+          archived: false,
+          page: 2,
+          perPage,
+        }),
+        "https://hatid.invalid",
+      );
+      assert.equal(url.pathname, `/${kind}`);
+      assert.equal(url.searchParams.get("q"), "[Dummy] & Santos");
+      assert.equal(url.searchParams.get("page"), "2");
+      assert.equal(url.searchParams.get("per_page"), String(perPage));
+      assert.equal(url.searchParams.get("archived"), "0");
+      assert.equal(url.searchParams.has("user_id"), false);
+    }
+    const archived = new URL(
+      directoryPath(kind, {
+        query: " ",
+        archived: true,
+        page: 1,
+        perPage: 10,
+      }),
+      "https://hatid.invalid",
+    );
+    assert.equal(archived.searchParams.get("archived"), "1");
+    assert.equal(archived.searchParams.has("q"), false);
+  }
+});
+
+/** Binary map tiles retain header-only Bearer auth, cancellation and the shared API error handling. */
+test("map tile requests return a PNG blob without putting tokens in URLs", async () => {
+  const controller = new AbortController();
+  const calls = captureRequests(
+    new Response(new Uint8Array([137, 80, 78, 71]), {
+      headers: { "Content-Type": "image/png" },
+    }),
+  );
+  const tile = await apiRequest<Blob>(
+    "/map/tiles/12/3424/1879",
+    "GET",
+    undefined,
+    "private-token",
+    { responseType: "blob", signal: controller.signal },
+  );
+  assert.ok(tile instanceof Blob);
+  assert.equal(tile.type, "image/png");
+  assert.deepEqual(
+    [...new Uint8Array(await tile.arrayBuffer())],
+    [137, 80, 78, 71],
+  );
+  assert.doesNotMatch(calls[0].url, /private-token|apiKey|access_token/);
+  assert.equal(
+    new Headers(calls[0].options.headers).get("Authorization"),
+    "Bearer private-token",
+  );
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.ok(calls[0].options.signal);
+});
+
+/** A map allowance error stays visible rather than being mistaken for an image or a sign-out. */
+test("binary map requests preserve API quota errors and reject unexpected successful HTML", async () => {
+  captureRequests(
+    json({ message: "Free map allowance reached." }, 429),
+    new Response("private server HTML", {
+      headers: { "Content-Type": "text/html" },
+    }),
+  );
+  await assert.rejects(
+    apiRequest("/map/tiles/1/0/0", "GET", undefined, "token", {
+      responseType: "blob",
+    }),
+    (cause: unknown) => cause instanceof ApiError && cause.status === 429,
+  );
+  await assert.rejects(
+    apiRequest("/map/tiles/1/0/0", "GET", undefined, "token", {
+      responseType: "blob",
+    }),
+    (cause: unknown) =>
+      cause instanceof ApiError &&
+      !cause.message.includes("private server HTML"),
+  );
+});
+
+/** Shared forms must show field errors while retaining connection/general fallbacks. */
+test("form messages prefer actionable API validation errors", () => {
+  assert.equal(
+    validationMessage(
+      new ApiError("Invalid", 422, {
+        fee: ["Fee exceeds quote."],
+        override_reason: ["Explain this override."],
+      }),
+    ),
+    "Fee exceeds quote. Explain this override.",
+  );
+  assert.equal(
+    validationMessage(new ApiError("Connection failed.", 0)),
+    "Connection failed.",
+  );
+  assert.equal(validationMessage(new Error("Try again.")), "Try again.");
+});
 
 const credentials = {
   email: "  RIDER@EXAMPLE.TEST ",
@@ -21,6 +129,7 @@ const user = {
   name: "Test Rider",
   email: "rider@example.test",
   phone: null,
+  vehicle: null,
   preferences: {
     deliveryAlerts: true,
     collectionAlerts: true,
@@ -174,6 +283,7 @@ test("registration trims account identity and preserves both password fields", a
   await authApi.register({
     ...credentials,
     name: "  Test Rider ",
+    vehicle: "motorcycle",
     password_confirmation: credentials.password,
   });
   assert.ok(calls[0].url.endsWith("/auth/register"));
@@ -181,6 +291,7 @@ test("registration trims account identity and preserves both password fields", a
     ...credentials,
     email: "rider@example.test",
     name: "Test Rider",
+    vehicle: "motorcycle",
     password_confirmation: credentials.password,
   });
 });
@@ -301,6 +412,26 @@ test("an unreadable successful response is rejected rather than accepted as a se
     (cause: unknown) =>
       cause instanceof ApiError && /unreadable response/.test(cause.message),
   );
+});
+
+/** A committed POST whose body is interrupted must retain the same operation on retry. */
+test("unreadable successful mutations remain ambiguous for identical retries", async () => {
+  const interrupted = new Response(null, { status: 201 });
+  mock.method(interrupted, "json", async () => {
+    throw new TypeError("Response body interrupted");
+  });
+  const calls = captureRequests(
+    interrupted,
+    json({ data: { id: 123, reference: "HTD-test" } }),
+  );
+  const values = { operation_id: "same-operation", quote: 11500 };
+  await assert.rejects(
+    apiRequest("/parcels", "POST", values, "test-token"),
+    (cause: unknown) => cause instanceof ApiError && cause.status === 0,
+  );
+  await apiRequest("/parcels", "POST", values, "test-token");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.body, calls[1].options.body);
 });
 
 test("network errors have a consistent connection message", async () => {

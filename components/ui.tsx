@@ -10,6 +10,7 @@ import {
   type ComponentProps,
   type InputHTMLAttributes,
   type ReactNode,
+  type SelectHTMLAttributes,
 } from "react";
 import {
   ArrowRight,
@@ -51,6 +52,20 @@ export function PasswordInput(props: InputHTMLAttributes<HTMLInputElement>) {
         {visible ? <EyeOff size={18} /> : <Eye size={18} />}
       </button>
     </div>
+  );
+}
+
+/** Keep vehicle choices identical in registration and the rider's editable Settings profile. */
+export function VehicleSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select {...props}>
+      <option value="" disabled>
+        Choose your vehicle
+      </option>
+      <option value="motorcycle">Motorcycle</option>
+      <option value="bicycle">Bicycle</option>
+      <option value="car">Car</option>
+    </select>
   );
 }
 
@@ -227,6 +242,7 @@ export function EmptyState({
   );
 }
 
+/** Shares a native modal shell, including guarded dismissal during an unresolved save. */
 export function Modal({
   open,
   onClose,
@@ -235,6 +251,8 @@ export function Modal({
   children,
   wide = false,
   drawer = false,
+  className = "",
+  closeDisabled = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -243,6 +261,8 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   drawer?: boolean;
+  className?: string;
+  closeDisabled?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -258,15 +278,22 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className={`dialog ${wide ? "dialog-wide" : ""} ${drawer ? "dialog-drawer" : ""}`}
+      className={`dialog ${wide ? "dialog-wide" : ""} ${drawer ? "dialog-drawer" : ""} ${className}`}
       aria-labelledby={id}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      onCancel={
+        /** Escape belongs to the top modal and cannot discard a pending save. */ (
+          event,
+        ) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!closeDisabled) onClose();
+        }
+      }
+      onClick={
+        /** Only a dismissible modal's own backdrop closes it. */ (event) => {
+          if (!closeDisabled && event.target === event.currentTarget) onClose();
+        }
+      }
     >
       <div className="dialog-inner">
         <header className="dialog-header">
@@ -275,9 +302,11 @@ export function Modal({
             {description && <p>{description}</p>}
           </div>
           <button
+            type="button"
             className="icon-button"
             onClick={onClose}
             aria-label="Close dialog"
+            disabled={closeDisabled}
           >
             <X size={19} />
           </button>
