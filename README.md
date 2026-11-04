@@ -12,11 +12,13 @@ npm run dev
 
 Run npm ci for initial dependency setup or after copying from another operating system; normal startup only needs npm run dev. Open http://localhost:3011. Both dev and start scripts use port3011; the separate admin uses3012. The native API runs at http://127.0.0.1:8000. Copy .env.example to .env.local for that NEXT_PUBLIC_API_URL; the generic transport fallback is http://localhost. The Windows SWC/Tailwind/Lightning CSS bindings and next.cmd were restored from the existing lockfile during the3 November repair. Avoid starting a duplicate dev server when the VS Code terminal is already running it.
 
+The later native startup repair found truncated SWC files and a missing Lucide ESM entry despite npm reporting the packages installed. A completed npm ci --include=optional --bin-links=true --no-audit --no-fund restored the existing locked versions and verified Git Bash startup plus login/JS/CSS responses. A normal run only needs npm run dev. Never interrupt an installation or copy node_modules between operating systems; dependency restoration requires a window without an active dev server.
+
 For a production preview, stop the development server before running:
 
 ```bash
 npm run build
-npm run start -- --port 3000
+npm run start
 ```
 
 ## What is connected
@@ -61,6 +63,27 @@ Read authentication in this order: lib/api.ts (normalization, transport, errors 
 
 The prototype reuses selectBatch() and selectNextStop() in lib/prototype/domain.ts across the dashboard, batch list, deliveries and map. Selecting a stop checks eligibility, supports unknown pins/offline manual selection, and sets the appropriate batch. Shared controls and related one-use helpers remain in existing files; framework route entries retain their page metadata.
 
+## Reusable pagination
+
+Read components/pagination.tsx (shared top entry selector, controlled footer and the local-list hook), lib/pagination.ts (range and page-number logic), then a caller such as features/deliveries/deliveries-screen.tsx. lib/pagination.test.ts checks empty, partial, clamped and long-page ranges. These are the three new files; no dependency was added.
+
+Local lists filter first, then share the hook/component:
+
+    const pagination = usePagination(filtered, JSON.stringify([search, status, method, batchId]));
+    <PaginationEntries {...pagination.controls} label="Deliveries pagination" />
+    <StopTable stops={pagination.items} />
+    <Pagination {...pagination.controls} label="Deliveries pagination" />
+
+Include every search/filter value in the reset key. Entry choices are 10, 50 and 100, defaulting to 10. Changing entries or filters resets page 1; removing records clamps the selected page. Totals and CSV exports continue using complete filtered records, not pagination.items.
+
+For current and future searchable paginated lists, place PaginationEntries on the toolbar's left and search on the right, without helper text or count badges between them. On mobile, stack entries above the full-width search. Reuse the existing toolbar styles. The footer Pagination shows Showing from–to of total on the left and page navigation on the right (stacked on mobile). Both controls share the same state; the footer no longer contains the entries dropdown.
+
+For a server list, render the API's data directly and pass meta.current_page, the selected perPage and meta.total to Pagination. Its onChange callback receives {page, perPage}; use those values in the next ?page=...&per_page=... request, and pass disabled={loading}. Do not slice an already-paginated server response. Laravel's native links/meta remain the source of the server result count.
+
+This frontend branch is feature/auth and contains sample business lists. The API-connected directory screens are still on feature/customer/seller; the user will combine branches separately. When combining them, replace their older DirectoryPagination footer with this shared component and carry perPage through directoryPath/useDirectory instead of the older fixed 25. This change intentionally does not merge branches.
+
+Pagination is used by customer/seller directories, delivery stops, weekly batches and their stops, seller balances, collection/remittance records, the fee ledger and notifications. Short dashboard previews, routing candidates and form pickers keep their existing behavior.
+
 ## Checks
 
 ```bash
@@ -71,7 +94,7 @@ npm run format:check
 npm run build
 ```
 
-The 29 tests cover 16 prototype-domain cases and 13 API-client cases. These include pricing, partial delivery, replay protection, unknown locations, GPS confirmation, five-candidate routing, holds, partial remittance, batch/stop selection, normalization without altering passwords, Bearer headers, cookie omission, API errors and safe return paths. Node 24 runs these TypeScript tests directly; no extra test framework is installed.
+The current branch has 40 tests: 16 prototype-domain, 18 API/auth-client and 6 pagination cases. Node 24 runs these TypeScript tests directly with test-concurrency=1 to keep checks sequential. No extra test framework is installed. A stale, unused directoryPath import left by the auth cherry-pick was removed so this branch's actual tests can run without importing the other branch's directory feature.
 
 Verified on 2 November 2026 after normalization: all 29 tests, lint with zero warnings, TypeScript, formatting, production build and git diff --check passed. Browser review verified mobile/desktop layout, guarded delivery links, explicit demo entry with return navigation, demo exit and incomplete reset-link handling. Live browser login with an uppercase email verified the rider through the API and returned to the requested delivery; settings showed the real account. Browser logout reduced its active server tokens from one to zero. The disposable local QA account was then removed, with no remaining QA tokens. All four auth pages also passed the native POST/pre-hydration submission check. The final production preview was checked on desktop and mobile with no console errors. Earlier prototype checks covered partial delivery, unknown-location GCash delivery with GPS skip, customer search, pricing preview, navigation and remittance acknowledgement.
 

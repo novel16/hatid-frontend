@@ -30,13 +30,21 @@ import {
   PageHeading,
 } from "@/components/ui";
 import { StopTable } from "@/components/delivery-ui";
+import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
 
+/** Reuses list pagination for weekly cards and a selected batch's customer stops. */
 export function BatchesScreen({ batchId }: { batchId?: string }) {
   const state = usePrototypeState();
   const { commit, notify } = useActions();
   const [open, setOpen] = useState(false);
   const batch = state.batches.find((item) => item.id === batchId);
   const summary = batch ? totals(state, batch.id) : null;
+  const batches = usePagination(state.batches);
+  const stops = usePagination(getStops(state, batchId), batchId);
   if (batchId && !batch)
     return (
       <EmptyState
@@ -96,6 +104,14 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
           </LinkButton>
         )}
       </PageHeading>
+      {!batch && (
+        <div className="directory-toolbar">
+          <PaginationEntries
+            {...batches.controls}
+            label="Weekly batches pagination"
+          />
+        </div>
+      )}
       {batch && summary ? (
         <>
           <div className="metrics batch-metrics">
@@ -115,12 +131,19 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
             title="Customer stops"
             description="A stop groups parcels for the same customer and address."
           >
-            <StopTable stops={getStops(state, batch.id)} />
+            <div className="table-toolbar">
+              <PaginationEntries
+                {...stops.controls}
+                label="Batch stops pagination"
+              />
+            </div>
+            <StopTable stops={stops.items} />
+            <Pagination {...stops.controls} label="Batch stops pagination" />
           </Card>
         </>
       ) : (
         <div className="batch-grid">
-          {state.batches.map((entry) => {
+          {batches.items.map((entry) => {
             const count = totals(state, entry.id);
             const percent = count.count
               ? Math.round((count.delivered / count.count) * 100)
@@ -168,6 +191,9 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
             );
           })}
         </div>
+      )}
+      {!batch && (
+        <Pagination {...batches.controls} label="Weekly batches pagination" />
       )}
       <div className="notice notice-muted batch-note">
         <CalendarDays size={18} />

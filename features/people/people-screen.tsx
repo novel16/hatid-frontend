@@ -29,7 +29,13 @@ import {
 import { NewCustomerDialog } from "@/features/customers/customer-dialog";
 import { LocationDialog } from "@/features/customers/location-dialog";
 import { SellerDialog } from "@/features/sellers/seller-dialog";
+import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
 
+/** Filters the sample customer directory before applying shared list pagination. */
 export function CustomersScreen() {
   const state = usePrototypeState();
   const { commit, notify } = useActions();
@@ -46,6 +52,7 @@ export function CustomersScreen() {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const pagination = usePagination(customers, query);
   return (
     <>
       <PageHeading
@@ -74,6 +81,10 @@ export function CustomersScreen() {
       </div>
       <Card>
         <div className="table-toolbar">
+          <PaginationEntries
+            {...pagination.controls}
+            label="Customers pagination"
+          />
           <div className="input-with-icon">
             <Search size={17} />
             <input
@@ -83,9 +94,6 @@ export function CustomersScreen() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <span className="small-muted">
-            Addresses stay separate for each customer
-          </span>
         </div>
         <div className="table-scroll">
           <table className="data-table">
@@ -99,7 +107,7 @@ export function CustomersScreen() {
               </tr>
             </thead>
             <tbody>
-              {customers.map((customer) => (
+              {pagination.items.map((customer) => (
                 <tr key={customer.id}>
                   <td>
                     <button
@@ -173,6 +181,7 @@ export function CustomersScreen() {
             </EmptyState>
           )}
         </div>
+        <Pagination {...pagination.controls} label="Customers pagination" />
       </Card>
       <NewCustomerDialog open={add} onClose={() => setAdd(false)} />
       {selected && (
@@ -335,6 +344,7 @@ export function CustomersScreen() {
   );
 }
 
+/** Keeps seller cards paginated without changing full-directory balances or preferences. */
 export function SellersScreen() {
   const state = usePrototypeState();
   const [query, setQuery] = useState("");
@@ -344,6 +354,7 @@ export function SellersScreen() {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const pagination = usePagination(sellers, query);
   return (
     <>
       <PageHeading
@@ -369,6 +380,10 @@ export function SellersScreen() {
         </div>
       </div>
       <div className="directory-toolbar">
+        <PaginationEntries
+          {...pagination.controls}
+          label="Sellers pagination"
+        />
         <div className="input-with-icon">
           <Search size={17} />
           <input
@@ -378,10 +393,9 @@ export function SellersScreen() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <Badge tone="gray">{state.sellers.length} seller(s)</Badge>
       </div>
       <div className="seller-directory">
-        {sellers.map((seller) => (
+        {pagination.items.map((seller) => (
           <section className="card seller-directory-card" key={seller.id}>
             <div className="seller-directory-head">
               <Avatar name={seller.name} color={seller.color} />
@@ -437,6 +451,7 @@ export function SellersScreen() {
           Add a seller with explicit fee preferences.
         </EmptyState>
       )}
+      <Pagination {...pagination.controls} label="Sellers pagination" />
       {editing && (
         <SellerDialog
           seller={editing === "new" ? undefined : editing}

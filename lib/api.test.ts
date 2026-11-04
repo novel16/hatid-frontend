@@ -4,7 +4,6 @@ import {
   ApiError,
   apiRequest,
   authApi,
-  directoryPath,
   parseStoredSession,
   verifyRiderSession,
   workspacePath,

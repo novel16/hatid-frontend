@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3011",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3011",
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test lib/api.test.ts lib/prototype/domain.test.ts",
+    "test": "node --test --test-concurrency=1 lib/api.test.ts lib/pagination.test.ts lib/prototype/domain.test.ts",
     "format": "prettier --write app components features lib",
     "format:check": "prettier --check app components features lib"
   },

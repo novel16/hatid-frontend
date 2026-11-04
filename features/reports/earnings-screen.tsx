@@ -13,7 +13,13 @@ import { usePrototypeState } from "@/lib/prototype/store";
 import { formatDate, money, totals } from "@/lib/prototype/domain";
 import { useActions } from "@/components/providers";
 import { Badge, Button, Card, PageHeading, exportCsv } from "@/components/ui";
+import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
 
+/** Pages the fee ledger while charts, totals and exports retain the whole selected period. */
 export function EarningsScreen() {
   const state = usePrototypeState();
   const { notify } = useActions();
@@ -27,6 +33,7 @@ export function EarningsScreen() {
       parcel.status === "delivered" &&
       (period === "all" || parcel.batchId === period),
   );
+  const pagination = usePagination(receipts, period);
   const start = new Date(`${batch?.start ?? "2026-10-26"}T00:00:00+08:00`);
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(start);
@@ -240,6 +247,12 @@ export function EarningsScreen() {
           </Badge>
         }
       >
+        <div className="table-toolbar">
+          <PaginationEntries
+            {...pagination.controls}
+            label="Earnings ledger pagination"
+          />
+        </div>
         <div className="table-scroll">
           <table className="data-table">
             <thead>
@@ -253,7 +266,7 @@ export function EarningsScreen() {
               </tr>
             </thead>
             <tbody>
-              {receipts.map((parcel) => (
+              {pagination.items.map((parcel) => (
                 <tr key={parcel.id}>
                   <td>
                     <strong>{parcel.reference}</strong>
@@ -290,6 +303,10 @@ export function EarningsScreen() {
             </p>
           )}
         </div>
+        <Pagination
+          {...pagination.controls}
+          label="Earnings ledger pagination"
+        />
         <div className="card-table-footer">
           <span>Retained rider fees in this period</span>
           <strong className="text-green">{money(summary.fees)}</strong>

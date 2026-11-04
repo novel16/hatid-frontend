@@ -15,6 +15,11 @@ import {
   exportCsv,
 } from "@/components/ui";
 import { StopTable } from "@/components/delivery-ui";
+import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
 
 export function DeliveriesScreen() {
   const params = useSearchParams();
@@ -24,6 +29,7 @@ export function DeliveriesScreen() {
   );
 }
 
+/** Paginates filtered stops while keeping batch totals and exports complete. */
 function DeliveriesContent({ initialSearch }: { initialSearch: string }) {
   const state = usePrototypeState();
   const { notify, commit } = useActions();
@@ -43,6 +49,10 @@ function DeliveriesContent({ initialSearch }: { initialSearch: string }) {
       `${stop.customer.name} ${stop.address.text} ${stop.parcels.map((parcel) => parcel.reference).join(" ")}`
         .toLowerCase()
         .includes(search.toLowerCase()),
+  );
+  const pagination = usePagination(
+    filtered,
+    JSON.stringify([search, status, method, state.selectedBatchId]),
   );
   return (
     <>
@@ -194,7 +204,14 @@ function DeliveriesContent({ initialSearch }: { initialSearch: string }) {
             </Button>
           </div>
         </div>
-        <StopTable stops={filtered} />
+        <div className="table-toolbar">
+          <PaginationEntries
+            {...pagination.controls}
+            label="Deliveries pagination"
+          />
+        </div>
+        <StopTable stops={pagination.items} />
+        <Pagination {...pagination.controls} label="Deliveries pagination" />
         <div className="card-table-footer">
           <span>
             {filtered.length} of {stops.length} stops

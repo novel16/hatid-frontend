@@ -24,6 +24,11 @@ import { formatDate } from "@/lib/prototype/domain";
 import { ApiError, errorMessage } from "@/lib/api";
 import { useActions } from "@/components/providers";
 import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
+import {
   Avatar,
   Badge,
   Button,
@@ -440,9 +445,11 @@ function Preference({
   );
 }
 
+/** Pages the activity list while marking notifications read across the whole workspace. */
 export function NotificationsScreen() {
   const state = usePrototypeState();
   const { commit } = useActions();
+  const pagination = usePagination(state.activity);
   return (
     <>
       <PageHeading
@@ -469,8 +476,14 @@ export function NotificationsScreen() {
         </LinkButton>
       </PageHeading>
       <Card>
+        <div className="table-toolbar">
+          <PaginationEntries
+            {...pagination.controls}
+            label="Notifications pagination"
+          />
+        </div>
         <div className="notification-list">
-          {state.activity.map((event) => (
+          {pagination.items.map((event) => (
             <Link
               key={event.id}
               href={event.href}
@@ -499,6 +512,7 @@ export function NotificationsScreen() {
             </Link>
           ))}
         </div>
+        <Pagination {...pagination.controls} label="Notifications pagination" />
       </Card>
     </>
   );

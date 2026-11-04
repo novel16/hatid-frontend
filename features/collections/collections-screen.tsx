@@ -35,7 +35,13 @@ import {
   PageHeading,
   exportCsv,
 } from "@/components/ui";
+import {
+  Pagination,
+  PaginationEntries,
+  usePagination,
+} from "@/components/pagination";
 
+/** Keeps each money-record list independently paginated without changing aggregate amounts. */
 export function CollectionsScreen() {
   const state = usePrototypeState();
   const { notify } = useActions();
@@ -53,6 +59,14 @@ export function CollectionsScreen() {
   const firstOwed = state.sellers.find(
     (seller) => sellerBalance(state, seller.id) > 0,
   );
+  const collections = usePagination(collected);
+  const remittances = usePagination(state.remittances);
+  const sellers = usePagination(state.sellers);
+  const recordPagination = tab === "collections" ? collections : remittances;
+  const recordPaginationLabel =
+    tab === "collections"
+      ? "Collection records pagination"
+      : "Remittance history pagination";
   return (
     <>
       <PageHeading
@@ -155,8 +169,14 @@ export function CollectionsScreen() {
           <h2>What’s due to your sellers</h2>
           <span>Net seller share only</span>
         </div>
+        <div className="directory-toolbar">
+          <PaginationEntries
+            {...sellers.controls}
+            label="Seller balances pagination"
+          />
+        </div>
         <div className="seller-balance-grid">
-          {state.sellers.map((seller) => {
+          {sellers.items.map((seller) => {
             const balance = sellerBalance(state, seller.id);
             return (
               <div className="card seller-balance-card" key={seller.id}>
@@ -185,6 +205,7 @@ export function CollectionsScreen() {
             );
           })}
         </div>
+        <Pagination {...sellers.controls} label="Seller balances pagination" />
       </section>
       <Card>
         <div className="tabs">
@@ -201,6 +222,12 @@ export function CollectionsScreen() {
             Remittance history<span>{state.remittances.length}</span>
           </button>
         </div>
+        <div className="table-toolbar">
+          <PaginationEntries
+            {...recordPagination.controls}
+            label={recordPaginationLabel}
+          />
+        </div>
         {tab === "collections" ? (
           <div className="table-scroll">
             <table className="data-table">
@@ -215,7 +242,7 @@ export function CollectionsScreen() {
                 </tr>
               </thead>
               <tbody>
-                {collected.map((parcel) => (
+                {collections.items.map((parcel) => (
                   <tr key={parcel.id}>
                     <td>
                       <Link
@@ -290,7 +317,7 @@ export function CollectionsScreen() {
                 </tr>
               </thead>
               <tbody>
-                {state.remittances.map((remit) => (
+                {remittances.items.map((remit) => (
                   <tr key={remit.id}>
                     <td>
                       <strong>
@@ -334,6 +361,10 @@ export function CollectionsScreen() {
             )}
           </div>
         )}
+        <Pagination
+          {...recordPagination.controls}
+          label={recordPaginationLabel}
+        />
         <div className="card-table-footer">
           <span>Delivery fees are retained, not remitted again.</span>
           <Badge tone="green">Clear money records</Badge>

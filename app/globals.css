@@ -1183,6 +1183,123 @@ small {
 .card-table-footer .text-link {
   font-size: 10.5px;
 }
+/* Entry selection sits above the list; result counts stay in the footer. */
+.pagination {
+  container-type: inline-size;
+  background: var(--white);
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 12px 12px;
+}
+.pagination-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.pagination-entries {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.pagination-entries select {
+  width: auto;
+  min-width: 66px;
+  min-height: 38px;
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+.pagination-summary {
+  margin: 0;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination-desktop {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pagination button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 32px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination button:hover:not(:disabled):not([aria-current="page"]) {
+  background: var(--paper);
+  border-color: var(--line);
+}
+.pagination button[aria-current="page"] {
+  background: var(--brand);
+  color: var(--white);
+}
+.pagination button:disabled {
+  background: var(--paper);
+  color: var(--muted);
+}
+.pagination-ellipsis {
+  min-width: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.pagination-mobile {
+  display: none;
+}
+@container (max-width: 650px) {
+  .pagination-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px 12px;
+  }
+  .pagination-desktop {
+    display: none;
+  }
+  .pagination-mobile {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 14px;
+    text-align: center;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pagination-mobile button {
+    min-height: 44px;
+    min-width: 68px;
+    border-color: var(--line);
+  }
+}
+@media (pointer: coarse) {
+  .pagination button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 650px), (pointer: coarse) {
+  .pagination-entries select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
 .tiny-dot {
   width: 4px;
   height: 4px;
@@ -1376,6 +1493,7 @@ small {
 .table-toolbar {
   padding: 17px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -2719,6 +2837,7 @@ body:has(dialog[open]) {
 }
 .directory-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 22px;
