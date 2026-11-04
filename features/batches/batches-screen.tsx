@@ -1,14 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  ArrowRight,
   CalendarDays,
   Check,
   Package,
   Plus,
+  Search,
 } from "lucide-react";
 import { usePrototypeState } from "@/lib/prototype/store";
 import {
@@ -24,27 +25,74 @@ import {
   Button,
   Card,
   EmptyState,
-  Field,
   LinkButton,
-  Modal,
   PageHeading,
 } from "@/components/ui";
 import { StopTable } from "@/components/delivery-ui";
+import { BatchCard, BatchDialog } from "@/features/batches/batch-components";
+import {
+  ApiError,
+  errorMessage,
+  type ApiBatch,
+  type BatchPage,
+  type NewBatch,
+} from "@/lib/api";
+import type { PaginationState } from "@/lib/pagination";
 import {
   Pagination,
   PaginationEntries,
   usePagination,
 } from "@/components/pagination";
 
-/** Reuses list pagination for weekly cards and a selected batch's customer stops. */
-export function BatchesScreen({ batchId }: { batchId?: string }) {
+type BatchScreenProps = { batchId?: string };
+
+/** Keeps actual account records separate from the existing local sample workflows. */
+export function BatchesScreen(props: BatchScreenProps) {
+  const { session } = useActions();
+  return session ? (
+    <AccountBatchesScreen key={session.user.id} {...props} />
+  ) : (
+    <DemoBatchesScreen {...props} />
+  );
+}
+
+/** Preserves sample progress and stops without storing account batch identifiers locally. */
+function DemoBatchesScreen({ batchId }: BatchScreenProps) {
   const state = usePrototypeState();
-  const { commit, notify } = useActions();
+  const { commit } = useActions();
   const [open, setOpen] = useState(false);
   const batch = state.batches.find((item) => item.id === batchId);
   const summary = batch ? totals(state, batch.id) : null;
   const batches = usePagination(state.batches);
   const stops = usePagination(getStops(state, batchId), batchId);
+
+  /** Uses the same date-range guard while writing only to the sample store. */
+  function createDemoBatch(values: NewBatch) {
+    if (
+      state.batches.some(
+        /** A date range has one sample record, just like an owned account range. */
+        (entry) => entry.start === values.start && entry.end === values.end,
+      )
+    ) {
+      const message =
+        "You already have a batch for this date range. Open it from Weekly batches.";
+      throw new ApiError(message, 422, { start: [message] });
+    }
+    const id = crypto.randomUUID();
+    if (
+      !commit(
+        /** Demo selection never changes the verified account's records. */
+        (current) =>
+          selectBatch(
+            { ...current, batches: [{ id, ...values }, ...current.batches] },
+            id,
+          ),
+        "New sample batch is ready.",
+      )
+    )
+      throw new Error("Unable to save the sample batch.");
+    setOpen(false);
+  }
   if (batchId && !batch)
     return (
       <EmptyState
@@ -76,7 +124,7 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
             onClick={() =>
               commit(
                 (current) => selectBatch(current, batch.id),
-                `${batch.name} is your active batch.`,
+                `${batch.name} is your selected sample batch.`,
               )
             }
             variant={
@@ -85,23 +133,14 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
           >
             <Check size={16} />
             {state.selectedBatchId === batch.id
-              ? "Active batch"
-              : "Make active"}
+              ? "Selected sample batch"
+              : "Select sample batch"}
           </Button>
         ) : (
           <Button onClick={() => setOpen(true)}>
             <Plus size={17} />
             New weekly batch
           </Button>
-        )}
-        {batch && (
-          <LinkButton
-            href="/parcels/new"
-            onClick={() => commit((current) => selectBatch(current, batch.id))}
-          >
-            <Plus size={17} />
-            Add parcel
-          </LinkButton>
         )}
       </PageHeading>
       {!batch && (
@@ -149,25 +188,21 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
               ? Math.round((count.delivered / count.count) * 100)
               : 0;
             return (
-              <section className="card batch-card" key={entry.id}>
-                <div className="batch-card-top">
-                  <span className="calendar-icon">
-                    <CalendarDays size={24} />
-                  </span>
+              <BatchCard
+                batch={entry}
+                key={entry.id}
+                badge={
                   <Badge
                     tone={state.selectedBatchId === entry.id ? "green" : "gray"}
                   >
                     {state.selectedBatchId === entry.id
-                      ? "Active"
+                      ? "Selected sample"
                       : count.count
                         ? "In workspace"
                         : "Ready to fill"}
                   </Badge>
-                </div>
-                <h2>{entry.name}</h2>
-                <p>
-                  {formatDate(entry.start)} – {formatDate(entry.end)}
-                </p>
+                }
+              >
                 <div className="batch-count">
                   <Package size={17} />
                   <strong>{count.count} parcels</strong>
@@ -180,14 +215,7 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
                   <span>{percent}% delivered</span>
                   <span>{count.pending} to deliver</span>
                 </div>
-                <Link
-                  className="button button-secondary button-full"
-                  href={`/batches/${entry.id}`}
-                >
-                  Open batch
-                  <ArrowRight size={16} />
-                </Link>
-              </section>
+              </BatchCard>
             );
           })}
         </div>
@@ -202,69 +230,316 @@ export function BatchesScreen({ batchId }: { batchId?: string }) {
           attempt without losing the parcel’s history.
         </p>
       </div>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Start a weekly batch"
-        description="Choose the dates you use to organise your parcels."
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const start = String(data.get("start"));
-            const end = String(data.get("end"));
-            if (end < start) {
-              notify("The end date must be on or after the start date.", true);
-              return;
-            }
-            const id = crypto.randomUUID();
-            commit(
-              (current) =>
-                selectBatch(
-                  {
-                    ...current,
-                    batches: [
-                      { id, name: String(data.get("name")).trim(), start, end },
-                      ...current.batches,
-                    ],
-                  },
-                  id,
-                ),
-              "New weekly batch is ready.",
-            );
-            setOpen(false);
-          }}
-        >
-          <div className="dialog-body form-stack">
-            <Field label="Batch name" required>
-              <input
-                name="name"
-                required
-                maxLength={60}
-                placeholder="e.g. Week 46"
-              />
-            </Field>
-            <div className="form-grid">
-              <Field label="Starts" required>
-                <input name="start" type="date" required />
-              </Field>
-              <Field label="Ends" required>
-                <input name="end" type="date" required />
-              </Field>
-            </div>
+      {open && (
+        <BatchDialog
+          initial={{ name: "", start: "", end: "" }}
+          onSave={createDemoBatch}
+          onClose={
+            /** Closing the form leaves the sample collection unchanged. */
+            () => setOpen(false)
+          }
+        />
+      )}
+    </>
+  );
+}
+
+/** Reads and creates real batches with server pagination, without modifying sample selection. */
+function AccountBatchesScreen({ batchId }: BatchScreenProps) {
+  const { request, notify } = useActions();
+  const router = useRouter();
+  const [query, setQuery] = useState<
+    PaginationState & { search: string; revision: number }
+  >({ page: 1, perPage: 10, search: "", revision: 0 });
+  const [result, setResult] = useState<BatchPage | null>(null);
+  const [batch, setBatch] = useState<ApiBatch | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [initial, setInitial] = useState<NewBatch | null>(null);
+  const [opening, setOpening] = useState(false);
+  const viewVersion = useRef(0);
+
+  /** Invalidates later action responses when leaving this view, including a cached page. */
+  useEffect(() => {
+    /** Returning to a view must not revive an earlier navigation action. */
+    return () => {
+      viewVersion.current += 1;
+    };
+  }, []);
+
+  /** Fetches owned data and ignores superseded search/detail responses. */
+  useEffect(() => {
+    let active = true;
+    /** Keeps detail and list responses explicit rather than casting their shapes. */
+    async function load() {
+      try {
+        if (batchId) {
+          const response = await request<{ data: ApiBatch }>(
+            `/batches/${encodeURIComponent(batchId)}`,
+          );
+          if (!active) return;
+          setBatch(response.data);
+        } else {
+          const params = new URLSearchParams({
+            page: String(query.page),
+            per_page: String(query.perPage),
+            q: query.search,
+          });
+          const response = await request<BatchPage>(`/batches?${params}`);
+          if (!active) return;
+          const lastPage = Math.max(1, response.meta.last_page);
+          if (query.page > lastPage) {
+            setQuery({ ...query, page: lastPage });
+            return;
+          }
+          setResult(response);
+        }
+        setLoading(false);
+      } catch (cause) {
+        if (!active) return;
+        setError(
+          cause instanceof ApiError
+            ? cause
+            : new ApiError(errorMessage(cause), 0),
+        );
+        setLoading(false);
+      }
+    }
+    const timer = setTimeout(
+      /** Debounce typing without adding a search library or polling loop. */
+      () => {
+        void load();
+      },
+      query.search ? 250 : 0,
+    );
+    /** Older requests cannot replace a newer page or a different detail view. */
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [request, batchId, query]);
+
+  /** Preserves unaffected search/entry choices while enabling an explicit retry. */
+  function updateQuery(values: Partial<typeof query> = {}) {
+    setLoading(true);
+    setError(null);
+    setQuery(
+      /** A revision permits a refresh of the same query. */
+      (current) => ({ ...current, ...values, revision: current.revision + 1 }),
+    );
+  }
+
+  /** Refreshes defaults even if the page has stayed open across a new local week. */
+  async function openCreate() {
+    if (opening) return;
+    const attempt = viewVersion.current;
+    setOpening(true);
+    try {
+      const response = await request<BatchPage>("/batches?per_page=1");
+      if (attempt === viewVersion.current) setInitial(response.current_week);
+    } catch (cause) {
+      notify(errorMessage(cause), true);
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  /** Opens the saved batch only after confirmed persistence and while this view is still active. */
+  async function createBatch(values: NewBatch) {
+    const attempt = viewVersion.current;
+    const response = await request<{ data: ApiBatch }>(
+      "/batches",
+      "POST",
+      values,
+    );
+    if (attempt !== viewVersion.current) return;
+    setInitial(null);
+    updateQuery({ search: "", page: 1 });
+    notify("Weekly batch saved to your account.");
+    router.push(`/batches/${response.data.id}`);
+  }
+
+  const controls = {
+    page: result?.meta.current_page ?? query.page,
+    perPage: query.perPage,
+    total: result?.meta.total ?? 0,
+    onChange: updateQuery,
+    disabled: loading,
+  };
+  const labels = {
+    current: "Current period",
+    previous: "Previous period",
+    upcoming: "Upcoming",
+  };
+
+  /** Renders one loading/error/detail/list state with straightforward guard clauses. */
+  function renderContent() {
+    if (loading)
+      return (
+        <Card>
+          <div className="card-body">
+            <p role="status">Loading your {batchId ? "batch" : "batches"}…</p>
           </div>
-          <footer className="dialog-footer">
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">
+        </Card>
+      );
+    if (error)
+      return (
+        <Card>
+          <EmptyState
+            title={
+              error.status === 404
+                ? "Batch not found"
+                : "Couldn’t load your batches"
+            }
+            action={
+              error.status === 404 ? (
+                <LinkButton href="/batches" variant="secondary">
+                  All weekly batches
+                </LinkButton>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={
+                    /** Retry keeps the current filter and entry size intact. */
+                    () => updateQuery()
+                  }
+                >
+                  Try again
+                </Button>
+              )
+            }
+          >
+            <span role="alert">
+              {error.status === 404
+                ? "Choose a batch from your own workspace."
+                : error.message}
+            </span>
+          </EmptyState>
+        </Card>
+      );
+    if (batch)
+      return (
+        <>
+          <div className="section-summary">
+            <Badge tone={batch.period === "current" ? "green" : "gray"}>
+              {labels[batch.period]}
+            </Badge>
+            <span>Viewing this batch</span>
+          </div>
+          <EmptyState title="Parcel intake is next">This batch keeps its original dates and stays accessible across weeks.</EmptyState>
+        </>
+      );
+    if (result?.data.length)
+      return (
+        <div className="batch-grid">
+          {result.data.map(
+            /** Calendar context does not imply delivery completion. */
+            (entry) => (
+              <BatchCard
+                key={entry.id}
+                batch={entry}
+                badge={
+                  <Badge tone={entry.period === "current" ? "green" : "gray"}>
+                    {labels[entry.period]}
+                  </Badge>
+                }
+              >
+                <div className="batch-count">
+                  <Package size={17} />
+                  <span>Ready for parcels</span>
+                </div>
+              </BatchCard>
+            ),
+          )}
+        </div>
+      );
+    return (
+      <Card>
+        <EmptyState
+          title={
+            query.search.trim()
+              ? "No matching batches"
+              : "No weekly batches yet"
+          }
+          action={
+            <Button onClick={openCreate} disabled={opening}>
               <Plus size={16} />
-              Create batch
+              New weekly batch
             </Button>
-          </footer>
-        </form>
-      </Modal>
+          }
+        >
+          {query.search.trim()
+            ? "Try another batch name or create a new intake week."
+            : "Start a batch for your first intake week."}
+        </EmptyState>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      {batchId && (
+        <LinkButton href="/batches" variant="ghost" className="back-link">
+          <ArrowLeft size={15} />
+          Weekly batches
+        </LinkButton>
+      )}
+      <PageHeading
+        eyebrow="A WEEK AT A TIME"
+        title={batch?.name ?? (batchId ? "Weekly batch" : "Weekly batches")}
+        description={
+          batch
+            ? `${formatDate(batch.start)} – ${formatDate(batch.end)} · Original intake dates stay with this batch.`
+            : "Organise your parcel intake by week. Previous batches remain available."
+        }
+      >
+        {!batchId && (
+          <Button onClick={openCreate} disabled={opening}>
+            <Plus size={17} />
+            {opening ? "Preparing…" : "New weekly batch"}
+          </Button>
+        )}
+      </PageHeading>
+      {!batchId && (
+        <div className="directory-toolbar">
+          <PaginationEntries {...controls} label="Weekly batches pagination" />
+          <div className="input-with-icon">
+            <Search size={17} />
+            <input
+              type="search"
+              aria-label="Search weekly batches"
+              placeholder="Search batches by name…"
+              maxLength={100}
+              value={query.search}
+              onChange={
+                /** A search always starts at page one. */
+                (event) => updateQuery({ search: event.target.value, page: 1 })
+              }
+            />
+          </div>
+        </div>
+      )}
+      {renderContent()}
+      {!batchId && result && !error && (
+        <Pagination {...controls} label="Weekly batches pagination" />
+      )}
+      <div className="notice notice-muted batch-note">
+        <CalendarDays size={18} />
+        <p>
+          Batch dates organise intake. An earlier week stays available so
+          unfinished deliveries can continue with their original history.
+        </p>
+      </div>
+      {initial && (
+        <BatchDialog
+          initial={initial}
+          onSave={createBatch}
+          onClose={
+            /** Cancelling creates no account or sample records. */
+            () => setInitial(null)
+          }
+        />
+      )}
     </>
   );
 }
