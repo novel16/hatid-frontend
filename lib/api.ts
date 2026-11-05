@@ -15,7 +15,7 @@ export interface AccountPreferences {
 export type Vehicle = "motorcycle" | "bicycle" | "car";
 
 export interface ApiRequestOptions {
-  responseType?: "json" | "blob";
+  responseType?: "json" | "blob" | "csv";
   signal?: AbortSignal;
 }
 
@@ -245,6 +245,70 @@ export interface ApiCollection extends ApiParcel {
   allocated_amount?: number;
 }
 
+export type ReportPeriod = "day" | "week" | "month" | "custom";
+
+export interface ReportFilters extends PaginationState {
+  period: ReportPeriod;
+  date?: string;
+  start?: string;
+  end?: string;
+  query: string;
+  method: "all" | PaymentMethod;
+}
+
+export interface EarningsReport {
+  period: {
+    kind: ReportPeriod;
+    anchor: string | null;
+    start: string;
+    end: string;
+    timezone: "Asia/Manila";
+  };
+  summary: {
+    receipts: number;
+    cash: number;
+    gcash: number;
+    fees: number;
+    seller_share: number;
+    total: number;
+  };
+  bucket_days: number;
+  trend: { start: string; end: string; receipts: number; fees: number }[];
+  generated_at: string;
+}
+
+export type EarningsParcel = ApiParcel & {
+  receipt: NonNullable<ApiParcel["receipt"]>;
+};
+
+export interface EarningsPage extends PaginatedResponse<EarningsParcel> {
+  report: EarningsReport;
+}
+
+export interface DashboardReport extends EarningsReport {
+  work: { ready: number; open: number; held: number; failed: number };
+  seller_outstanding: number;
+}
+
+/** Uses identical report filters for totals, ledger and export, omitting pagination from a full CSV. */
+export function reportPath(filters: ReportFilters, exporting = false): string {
+  const params = new URLSearchParams({
+    period: filters.period,
+    method: filters.method,
+  });
+  if (filters.period === "custom") {
+    if (filters.start !== undefined) params.set("start", filters.start);
+    if (filters.end !== undefined) params.set("end", filters.end);
+  } else if (filters.date) params.set("date", filters.date);
+  const query = filters.query.trim();
+  if (query) params.set("q", query);
+  if (!exporting) {
+    params.set("page", String(filters.page));
+    params.set("per_page", String(filters.perPage));
+  }
+  return `/reports/earnings${exporting ? "/export" : ""}?${params}`;
+}
+
 export interface ApiDelivery {
   key: string;
   customer: ApiParcel["customer"];
@@ -426,6 +490,12 @@ export async function apiRequest<T>(
   token?: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
+  const binaryType =
+    options.responseType === "csv"
+      ? "text/csv"
+      : options.responseType === "blob"
+        ? "image/png"
+        : null;
   let response: Response;
   try {
     response = await fetch(`${API_URL}/api/v1${path}`, {
@@ -436,8 +506,7 @@ export async function apiRequest<T>(
         ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)])
         : AbortSignal.timeout(15_000),
       headers: {
-        Accept:
-          options.responseType === "blob" ? "image/png" : "application/json",
+        Accept: binaryType ?? "application/json",
         ...(data !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -451,15 +520,17 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 204) return undefined as T;
-  if (response.ok && options.responseType === "blob") {
+  if (response.ok && binaryType) {
     if (
       !response.headers
         .get("Content-Type")
         ?.toLowerCase()
-        .startsWith("image/png")
+        .startsWith(binaryType)
     ) {
       throw new ApiError(
-        "Hatid returned an unreadable map tile. Please try again.",
+        options.responseType === "csv"
+          ? "Hatid returned an unreadable report. Please try again."
+          : "Hatid returned an unreadable map tile. Please try again.",
         response.status,
       );
     }

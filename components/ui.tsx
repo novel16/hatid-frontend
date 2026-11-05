@@ -380,6 +380,7 @@ export function SectionLink({
   );
 }
 
+/** Formats explicit demo rows safely, then reuses the same download path as actual server reports. */
 export function exportCsv(filename: string, rows: (string | number)[][]): void {
   const csv = rows
     .map((row) =>
@@ -392,12 +393,22 @@ export function exportCsv(filename: string, rows: (string | number)[][]): void {
         .join(","),
     )
     .join("\r\n");
-  const url = URL.createObjectURL(
+  downloadFile(
     new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }),
+    filename,
   );
+}
+
+/** Shares browser downloads for server-authenticated CSV blobs and explicit prototype exports. */
+export function downloadFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(
+    /** Release the temporary URL after the browser starts its download. */ () =>
+      URL.revokeObjectURL(url),
+    1000,
+  );
 }

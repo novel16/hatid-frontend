@@ -8,6 +8,7 @@ import {
   collectionPath,
   retainRemittanceOperation,
   type NewRemittance,
+  reportPath,
   parseStoredSession,
   verifyRiderSession,
   workspacePath,
@@ -15,6 +16,83 @@ import {
 } from "./api.ts";
 
 afterEach(() => mock.restoreAll());
+
+/** Date/search/method scope remains identical while CSV downloads deliberately omit current-page limits. */
+test("report URLs preserve applied dates and export the complete filtered scope", () => {
+  const filters = {
+    period: "custom" as const,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    date: "2026-10-01",
+    query: "  Shop & Co  ",
+    method: "gcash" as const,
+    page: 2,
+    perPage: 10 as const,
+  };
+  const ledger = new URL(reportPath(filters), "https://hatid.invalid");
+  const exported = new URL(reportPath(filters, true), "https://hatid.invalid");
+  assert.equal(ledger.pathname, "/reports/earnings");
+  assert.equal(exported.pathname, "/reports/earnings/export");
+  for (const url of [ledger, exported]) {
+    assert.equal(url.searchParams.get("start"), "2026-11-01");
+    assert.equal(url.searchParams.get("end"), "2026-11-30");
+    assert.equal(url.searchParams.get("q"), "Shop & Co");
+    assert.equal(url.searchParams.get("method"), "gcash");
+    assert.equal(url.searchParams.has("date"), false);
+    assert.equal(url.searchParams.has("user_id"), false);
+  }
+  assert.equal(ledger.searchParams.get("page"), "2");
+  assert.equal(exported.searchParams.has("page"), false);
+  assert.equal(exported.searchParams.has("per_page"), false);
+  const week = new URL(
+    reportPath({ ...filters, period: "week" }),
+    "https://hatid.invalid",
+  );
+  assert.equal(week.searchParams.get("date"), "2026-10-01");
+  assert.equal(week.searchParams.has("start"), false);
+});
+
+/** CSV downloads keep Bearer auth in headers and never accept an HTML success page as a report. */
+test("protected CSV transport validates content type and preserves API errors", async () => {
+  const calls = captureRequests(
+    new Response("\uFEFFParcel,Received PHP\r\nHTD-1,115.01", {
+      headers: { "Content-Type": "text/csv; charset=UTF-8" },
+    }),
+    new Response("private server HTML", {
+      headers: { "Content-Type": "text/html" },
+    }),
+    json({ message: "Expired." }, 401),
+  );
+  const file = await apiRequest<Blob>(
+    "/reports/earnings/export?period=week",
+    "GET",
+    undefined,
+    "private-token",
+    { responseType: "csv" },
+  );
+  assert.match(await file.text(), /HTD-1,115\.01/);
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(new Headers(calls[0].options.headers).get("Accept"), "text/csv");
+  assert.equal(
+    new Headers(calls[0].options.headers).get("Authorization"),
+    "Bearer private-token",
+  );
+  assert.doesNotMatch(calls[0].url, /private-token/);
+  await assert.rejects(
+    apiRequest("/reports/earnings/export", "GET", undefined, "token", {
+      responseType: "csv",
+    }),
+    (cause: unknown) =>
+      cause instanceof ApiError &&
+      !cause.message.includes("private server HTML"),
+  );
+  await assert.rejects(
+    apiRequest("/reports/earnings/export", "GET", undefined, "token", {
+      responseType: "csv",
+    }),
+    (cause: unknown) => cause instanceof ApiError && cause.status === 401,
+  );
+});
 
 /** A rejected retry cannot prove an earlier ambiguous physical handover was never recorded. */
 test("ambiguous handovers retain their exact operation through rejected retries", () => {

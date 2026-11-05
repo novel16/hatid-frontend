@@ -18,9 +18,16 @@ import {
   PaginationEntries,
   usePagination,
 } from "@/components/pagination";
+import { AccountEarnings } from "./account-earnings";
 
-/** Pages the fee ledger while charts, totals and exports retain the whole selected period. */
+/** Verified accounts read server reports; explicit demo records remain on their own path. */
 export function EarningsScreen() {
+  const { session } = useActions();
+  return session ? <AccountEarnings key={session.user.id} /> : <DemoEarnings />;
+}
+
+/** Pages the sample ledger while keeping its existing labelled prototype workflow separate. */
+function DemoEarnings() {
   const state = usePrototypeState();
   const { notify } = useActions();
   const [period, setPeriod] = useState(state.selectedBatchId);
