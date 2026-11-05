@@ -1,6 +1,10 @@
 "use client";
 
-import { AddParcelButton } from "@/features/parcels/parcel-entry-screen";
+import {
+  AddParcelButton,
+  useParcelEntry,
+} from "@/features/parcels/parcel-entry-screen";
+import { useEffect, useState } from "react";
 
 import Link from "next/link";
 import {
@@ -12,6 +16,7 @@ import {
   Clock,
   Package,
   Plus,
+  RefreshCw,
   Sparkles,
   Wallet,
 } from "lucide-react";
@@ -26,6 +31,7 @@ import {
 import { useActions } from "@/components/providers";
 import {
   Badge,
+  Button,
   Card,
   LinkButton,
   PageHeading,
@@ -33,26 +39,22 @@ import {
 } from "@/components/ui";
 import { NextStopCard, StopTable } from "@/components/delivery-ui";
 import { AccountDeliveriesScreen } from "@/features/deliveries/account-deliveries";
+import { errorMessage, type DashboardReport } from "@/lib/api";
 
 /** Account navigation shows actual work; prototype metrics and sample IDs stay in demo mode. */
 export function DashboardScreen() {
+  const { session } = useActions();
+  return session ? (
+    <AccountDashboard key={session.user.id} name={session.user.name} />
+  ) : (
+    <DemoDashboard />
+  );
+}
+
+/** Keeps the original interactive sample overview isolated from authenticated account reports. */
+function DemoDashboard() {
   const state = usePrototypeState();
-  const { commit, session } = useActions();
-  if (session)
-    return (
-      <>
-        <PageHeading
-          eyebrow="YOUR RIDER WORKSPACE"
-          title={`Magandang araw, ${session.user.name.split(" ")[0]}.`}
-          description="Encode parcels and continue open deliveries across intake weeks."
-        >
-          <LinkButton href="/batches" variant="secondary">
-            Weekly batches
-          </LinkButton>
-        </PageHeading>
-        <AccountDeliveriesScreen embedded />
-      </>
-    );
+  const { commit } = useActions();
   const riderName = state.settings.riderName;
   const summary = totals(state, state.selectedBatchId);
   const batch = state.batches.find((item) => item.id === state.selectedBatchId);
@@ -283,5 +285,175 @@ export function DashboardScreen() {
         </span>
       </div>
     </div>
+  );
+}
+
+/** Shows today's real receipts/fees while open work and seller debt retain their lifetime scopes. */
+function AccountDashboard({ name }: { name: string }) {
+  const { request } = useActions();
+  const { revision: parcelRevision } = useParcelEntry();
+  const [revision, setRevision] = useState(0);
+  const [snapshot, setSnapshot] = useState<{
+    key: string;
+    data: DashboardReport | null;
+    error: string;
+  } | null>(null);
+  const key = `${revision}:${parcelRevision}`;
+
+  /** Parcel saves and explicit refreshes replace the summary only after a current successful read. */
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    /** The API owns the Manila calendar date and money scopes; the client never substitutes demo totals. */
+    async function load() {
+      try {
+        const response = await request<{ data: DashboardReport }>(
+          "/dashboard",
+          "GET",
+          undefined,
+          { signal: controller.signal },
+        );
+        if (active) setSnapshot({ key, data: response.data, error: "" });
+      } catch (cause) {
+        if (active)
+          setSnapshot({
+            key,
+            data: null,
+            error: errorMessage(cause, "Unable to load dashboard totals."),
+          });
+      }
+    }
+    void load();
+    /** Discard older account/navigation/parcel revisions without affecting manual delivery access. */
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [request, key]);
+
+  /** Recheck statistics on demand without starting polling or map/provider calls. */
+  function refresh() {
+    setRevision(
+      /** Mark the old snapshot unavailable before its replacement arrives. */ (
+        current,
+      ) => current + 1,
+    );
+  }
+
+  const loading = snapshot?.key !== key;
+  const data = !loading ? snapshot?.data : null;
+  const error = !loading ? snapshot?.error : "";
+  return (
+    <>
+      <PageHeading
+        eyebrow="YOUR RIDER WORKSPACE"
+        title={`Magandang araw, ${name.split(" ")[0]}.`}
+        description="Continue open deliveries across intake weeks and see your actual confirmed earnings."
+      >
+        <LinkButton href="/batches" variant="secondary">
+          Weekly batches
+        </LinkButton>
+        <AddParcelButton />
+      </PageHeading>
+      <div className="section-summary">
+        <Badge tone="green">
+          {data
+            ? `Today · ${data.period.start} · Asia/Manila`
+            : "Dashboard totals"}
+        </Badge>
+        <Button variant="ghost" disabled={loading} onClick={refresh}>
+          <RefreshCw size={15} /> Refresh totals
+        </Button>
+        {loading && <span role="status">Loading actual totals…</span>}
+      </div>
+      {error && (
+        <div className="notice notice-amber" role="alert">
+          <p>{error} Your delivery list remains available below.</p>
+        </div>
+      )}
+      <div className="metrics">
+        {[
+          {
+            label: "Ready to deliver",
+            value: data?.work.ready ?? "—",
+            detail: "Across all intake weeks",
+            icon: Package,
+            tone: "sage",
+          },
+          {
+            label: "Confirmed today",
+            value: data?.summary.receipts ?? "—",
+            detail: "Delivered with full payment received",
+            icon: CheckCheck,
+            tone: "blue",
+          },
+          {
+            label: "Recorded collections today",
+            value: data ? money(data.summary.total) : "—",
+            detail: data
+              ? `Cash ${money(data.summary.cash)} · GCash ${money(data.summary.gcash)}`
+              : "Actual cash and rider-confirmed GCash",
+            icon: Wallet,
+            tone: "peach",
+          },
+          {
+            label: "Your retained fees today",
+            value: data ? money(data.summary.fees) : "—",
+            detail: "Recognized by confirmation date",
+            icon: ArrowUpRight,
+            tone: "purple",
+          },
+        ].map(
+          /** Unavailable statistics show a dash instead of invented zero values. */ ({
+            label,
+            value,
+            detail,
+            icon: Icon,
+            tone,
+          }) => (
+            <div className="metric-card" key={label}>
+              <div>
+                <p>{label}</p>
+                <span className={`metric-icon avatar-${tone}`}>
+                  <Icon size={18} />
+                </span>
+              </div>
+              <strong>{value}</strong>
+              <small>{detail}</small>
+            </div>
+          ),
+        )}
+      </div>
+      <div className="directory-toolbar">
+        <p className="text-muted">
+          {data
+            ? `${data.work.open} open parcels · ${data.work.held} on hold · ${data.work.failed} failed`
+            : "Open work keeps its original batch and delivery history."}
+        </p>
+        <LinkButton href="/earnings" variant="secondary">
+          Earnings & reports <ArrowRight size={15} />
+        </LinkButton>
+      </div>
+      <Card
+        title="Seller share outstanding"
+        description="Lifetime account balance after recorded handovers; separate from today's earnings."
+        action={
+          <LinkButton href="/collections" variant="ghost">
+            Review collections <ArrowRight size={15} />
+          </LinkButton>
+        }
+      >
+        <div className="card-body">
+          <strong className="text-green">
+            {data ? money(data.seller_outstanding) : "—"}
+          </strong>
+          <p className="text-muted">
+            Recorded receipts and balances are not a live GCash wallet or
+            physical cash count.
+          </p>
+        </div>
+      </Card>
+      <AccountDeliveriesScreen embedded />
+    </>
   );
 }
