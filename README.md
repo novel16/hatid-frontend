@@ -21,6 +21,18 @@ npm run build
 npm run start
 ```
 
+## Actual Notifications & Activity — 6 November
+
+The inbox now reads the verified rider's API notifications, with All activity/Unread, full unread count and server10/50/100 pagination. Individual/all read confirmations persist in Laravel across refresh/devices. Mark-all covers currently unread alerts across all pages, preserves existing read timestamps and deletes no history. Clicking a record opens its owned delivery or recorded remittance detail and independently confirms read metadata; an interrupted read confirmation never blocks navigation. Targets are fixed internal routes, and remittance detail URLs follow opening/closing the visible record without resetting history filters.
+
+The bell shares an account-keyed context with the inbox. It refreshes on route/focus/manual refresh and confirmed local delivery/remittance writes; no background polling or browser push. Loading/errors never become sample data or fabricated zero counts. Each page/filter attempt has a fresh identity, and its single result contains either success data or an error, so revisiting a failed filter cannot revive stale errors/rows. Explicit demo activity remains separate. Settings toggles control new in-app alerts while existing activity and financial history remain.
+
+Alerts start with newly saved actions after this feature; there is no historical backfill. At most one combined delivery/payment alert appears for a grouped successful handover when Collection Alerts is on; Delivery Alerts is the fallback for delivery-only notifications. Non-delivered outcomes use Delivery Alerts; recorded remittances use Collection Alerts. GCash receipts and seller handovers remain manually confirmed external events.
+
+Only one new frontend application file: features/settings/account-notifications.tsx owns the context, lifecycle and actual inbox together. Reuse shared controls/Pagination, lib/api helpers and existing transaction forms. Reading order: workspace layout/provider → shell bell or NotificationsScreen → AccountNotifications → notificationPath/protected request → API NotificationRequest/Service/Resource. nextNotificationView and remittanceDetailPath are small shared helpers for repeated state/navigation updates.
+
+Verified:62 frontend tests, full zero-warning ESLint, TypeScript and scoped Prettier;253 API tests/1870 assertions and Pint. One independent read-only review found the stale-error/filter and detail-URL issues; corrections include RED→GREEN view-identity/URL regressions and mutually exclusive read state. Native four missing-Bearer routes return401/no cookies; Notifications/Collections detail URLs and23 script/style assets return HTTP200. Browser service timed out before opening a tab, so actual signed-in interaction/mobile visual QA is unverified. Production build remains deferred to preserve active .next; user servers stayed running. No dependencies, credentials, financial fixtures or payment/gateway actions were added.
+
 ## Actual earnings and dashboard — 5 November
 
 Earnings & Reports uses confirmed full delivered receipts from Laravel. Day, Monday–Sunday week, calendar month and custom dates follow the actual confirmation time in Asia/Manila. Original intake weeks remain visible and unchanged. Search and actual cash/manual-GCash method apply to cards, trend, ledger and complete CSV; changing pages or10/50/100 entries never redefines totals. Apply commits date edits; export stays disabled while dates are unapplied or reads are unresolved. The CSV exports every matching record and pins the currently displayed dates, including across a midnight boundary. Cash/GCash are recorded inflows, not live balances. Seller remittance never earns the rider fee again.
@@ -37,7 +49,7 @@ Login, rider registration, current-user verification, password recovery/reset, p
 
 The root opens sign-in. Workspace pages require a verified rider session or explicit Try the interactive prototype / tour entry. A safe internal return path takes you back to the requested page. Demo access is also in memory; after a full refresh choose demo again. Client navigation guards control the UI; Laravel enforces real API authorization.
 
-Signed-in Settings, Weekly Batches, Parcel Entry, Deliveries, Customers, Sellers, Collections/remittance, Earnings & Reports and dashboard summaries use the actual API. Account records never enter demo localStorage. Both directories list owned database records with server search, active/archive filtering and shared10/50/100 pagination. Customer/address and seller create/edit/archive/restore use actual endpoints; directory pages have no static account rows or invented parcel counts/balances. Notifications and offline/sync remain sample previews; actual map behavior is documented below. Demo records remain separate.
+Signed-in Settings, Weekly Batches, Parcel Entry, Deliveries, Customers, Sellers, Collections/remittance, Earnings & Reports, dashboard summaries and Notifications use the actual API. Account records never enter demo localStorage. Both directories list owned database records with server search, active/archive filtering and shared10/50/100 pagination. Customer/address and seller create/edit/archive/restore use actual endpoints; directory pages have no static account rows or invented parcel counts/balances. Offline/sync remains a sample preview; actual map behavior is documented below. Demo records remain separate.
 
 Customer-page reading order: app/(workspace)/customers/page.tsx → CustomersScreen / AccountCustomersScreen in features/people/people-screen.tsx → directoryPath and protected request → existing Laravel CustomerController/CustomerService/CustomerResource. Shared CustomerDialog and AddressDialog stay in features/customers/customer-dialog.tsx; parcel intake now reuses CustomerDialog's onSave callback. No new source files or dependencies were added. The Customers page offers sign-in in demo mode; sample customer choices remain limited to explicit demo parcel workflows. Verification:50 frontend tests,25 directory API tests /316 assertions, scoped ESLint/TypeScript/Prettier, live Bearer API responses with2,001 total customers and2,000 dummy search matches, and HTTP200 for the Customers page and18 script assets. The temporary verification token was revoked. Browser interaction and production build were not run; user dev/API stayed live.
 
@@ -170,7 +182,7 @@ npm run format:check
 npm run build
 ```
 
-The current branch has57 tests:16 prototype-domain,27 API/client,7 maps/GPS and7 pagination/select cases. Node24 runs these TypeScript tests directly with test-concurrency=1 to keep checks sequential. No extra test framework is installed.
+The current branch has62 tests:16 prototype-domain,32 API/client,7 maps/GPS and7 pagination/select cases. Node24 runs these TypeScript tests directly with test-concurrency=1 to keep checks sequential. No extra test framework is installed.
 
 Full ESLint passed on5 November. The modified earnings screen now passes formatting; three previously flagged, untouched files remain: features/settings/devices-panel.tsx, lib/prototype/domain.test.ts and lib/prototype/domain.ts. Changed files pass formatting; those unrelated files were not rewritten. Production build remains deferred while the user's dev server owns .next.
 

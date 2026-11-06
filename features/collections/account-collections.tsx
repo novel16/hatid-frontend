@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -23,6 +24,7 @@ import {
 import { Pagination, PaginationEntries } from "@/components/pagination";
 import {
   collectionPath,
+  remittanceDetailPath,
   errorMessage,
   type ApiCollection,
   type ApiRemittance,
@@ -37,26 +39,45 @@ import {
   AccountRemittanceDialog,
   RemittanceDetail,
 } from "./account-remittance-dialog";
+import { useNotifications } from "@/features/settings/account-notifications";
 
 /** Displays only the verified rider's actual receipt and seller-share ledger. */
-export function AccountCollections() {
+export function AccountCollections({
+  remittanceId = null,
+}: {
+  remittanceId?: number | null;
+}) {
   const { notify } = useActions();
-  const [view, setView] = useState<CollectionView>("receipts");
+  const router = useRouter();
+  const params = useSearchParams();
+  const { refresh: refreshNotifications } = useNotifications();
+  const [view, setView] = useState<CollectionView>(
+    remittanceId === null ? "receipts" : "remittances",
+  );
   const [summary, setSummary] = useState<CollectionSummary | null>(null);
   const [revision, setRevision] = useState(0);
   const [handover, setHandover] = useState<ApiSellerBalance | "new" | null>(
     null,
   );
-  const [detail, setDetail] = useState<number | null>(null);
+  const detail = remittanceId;
+
+  /** Keep the visible handover and shareable URL aligned without remounting history filters. */
+  function showDetail(id: number | null) {
+    setView("remittances");
+    router.replace(remittanceDetailPath(params.toString(), id), {
+      scroll: false,
+    });
+  }
 
   /** Reloads the current ledger without changing its search or page after confirmed persistence. */
   function saved(record: ApiRemittance) {
+    refreshNotifications();
     setHandover(null);
     setSummary(null);
     setRevision(
       /** Invalidate a pre-save ledger read. */ (current) => current + 1,
     );
-    setDetail(record.id);
+    showDetail(record.id);
     notify(
       `${record.code} recorded. Seller balance updated; retained fees stay unchanged.`,
     );
@@ -345,7 +366,7 @@ export function AccountCollections() {
                             aria-label={`View ${record.code}`}
                             onClick={
                               /** Read this handover's original parcel allocations. */ () =>
-                                setDetail(record.id)
+                                showDetail(record.id)
                             }
                           >
                             Details
@@ -372,8 +393,12 @@ export function AccountCollections() {
       )}
       {detail !== null && (
         <RemittanceDetail
+          key={detail}
           id={detail}
-          onClose={/** Close a read-only history view. */ () => setDetail(null)}
+          onClose={
+            /** Close this read-only view and clear its URL target. */ () =>
+              showDetail(null)
+          }
         />
       )}
     </>

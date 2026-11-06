@@ -28,6 +28,7 @@ import { usePrototypeState } from "@/lib/prototype/store";
 import { Avatar, Badge, Brand, Modal } from "./ui";
 import { useActions } from "./providers";
 import { useParcelEntry } from "@/features/parcels/parcel-entry-screen";
+import { useNotifications } from "@/features/settings/account-notifications";
 
 const links = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -48,6 +49,7 @@ const links = [
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
+  const { unreadCount } = useNotifications();
   const { openParcel } = useParcelEntry();
   const riderName = session?.user.name ?? state.settings.riderName;
   const compactView =
@@ -64,6 +66,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       "/settings",
       "/map",
       "/customers",
+      "/sellers",
+      "/collections",
+      "/earnings",
+      "/reports",
+      "/notifications",
     ].some(
       /** Only implemented account pages receive an account-data label. */
       (prefix) => path.startsWith(prefix),
@@ -267,9 +274,18 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <Link
               className="icon-button notification-button"
               href="/notifications"
-              aria-label="Open notifications"
+              aria-label={
+                session && unreadCount !== null
+                  ? `Open notifications, ${unreadCount} unread`
+                  : "Open notifications"
+              }
             >
               <Bell size={20} />
+              {session && unreadCount !== null && unreadCount > 0 && (
+                <span className="notification-count" aria-hidden="true">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
               {!session && !state.notificationsRead && <i />}
             </Link>
             <Link

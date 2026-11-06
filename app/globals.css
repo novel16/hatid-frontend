@@ -664,6 +664,20 @@ small {
 .notification-button {
   position: relative;
 }
+.notification-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 17px;
+  padding: 1px 4px;
+  border: 2px solid white;
+  border-radius: 12px;
+  background: var(--brand);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+}
 .notification-button i {
   position: absolute;
   width: 5px;
@@ -3881,6 +3895,42 @@ body:has(dialog[open]) {
   padding: 24px;
   border-bottom: 1px solid var(--line-soft);
   background: #fcfdf9;
+}
+.notification-toolbar .segmented {
+  margin-left: auto;
+}
+.notification-inbox-summary {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.notification-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  background: #fcfdf9;
+}
+.notification-account-row:last-child {
+  border-bottom: 0;
+}
+.notification-account-row .notification-item {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+.notification-account-row.notification-read {
+  background: white;
+}
+.notification-read-action {
+  margin-right: 24px;
+}
+@media (max-width: 640px) {
+  .notification-account-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notification-read-action {
+    margin: 0 17px 17px 66px;
+  }
 }
 .notification-item:last-child {
   border: 0;

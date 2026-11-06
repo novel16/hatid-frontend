@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { parseRecordId } from "@/lib/api";
 import {
   ArrowDownLeft,
   ArrowRight,
@@ -45,8 +47,13 @@ import { AccountCollections } from "./account-collections";
 /** Real account money is never read from or committed into the explicit demo store. */
 export function CollectionsScreen() {
   const { session } = useActions();
+  const params = useSearchParams();
+  const initialRemittanceId = parseRecordId(params.get("remittance"));
   return session ? (
-    <AccountCollections key={session.user.id} />
+    <AccountCollections
+      key={session.user.id}
+      remittanceId={initialRemittanceId}
+    />
   ) : (
     <DemoCollections />
   );

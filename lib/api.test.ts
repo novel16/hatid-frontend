@@ -13,9 +13,102 @@ import {
   verifyRiderSession,
   workspacePath,
   validationMessage,
+  notificationPath,
+  notificationHref,
+  parseRecordId,
+  nextNotificationView,
+  remittanceDetailPath,
 } from "./api.ts";
 
 afterEach(() => mock.restoreAll());
+
+/** Revisiting a failed filter must use a fresh read identity, not revive its old error or rows. */
+test("notification view attempts stay distinct when the same filter is revisited", () => {
+  const first = { page: 1, perPage: 10 as const, unreadOnly: true, attempt: 0 };
+  const all = nextNotificationView(first, { unreadOnly: false });
+  const revisit = nextNotificationView(all, { unreadOnly: true });
+  assert.notEqual(revisit.attempt, first.attempt);
+  assert.notEqual(revisit.attempt, all.attempt);
+  assert.equal(revisit.unreadOnly, true);
+  assert.equal(revisit.page, 1);
+  assert.equal(first.attempt, 0);
+});
+
+/** The address must identify the currently visible detail, including closing and opening another record. */
+test("remittance detail URLs replace and clear targets while preserving other filters", () => {
+  const opened = new URL(
+    remittanceDetailPath("method=cash&remittance=12", 27),
+    "https://hatid.invalid",
+  );
+  assert.equal(opened.pathname, "/collections");
+  assert.equal(opened.searchParams.get("remittance"), "27");
+  assert.equal(opened.searchParams.get("method"), "cash");
+  const closed = new URL(
+    remittanceDetailPath(opened.searchParams.toString(), null),
+    "https://hatid.invalid",
+  );
+  assert.equal(closed.searchParams.has("remittance"), false);
+  assert.equal(closed.searchParams.get("method"), "cash");
+});
+
+/** Account pagination/filter scope is encoded without allowing client-supplied ownership. */
+test("notification URLs preserve unread filtering and native pagination", () => {
+  const url = new URL(
+    notificationPath({ page: 2, perPage: 50, unreadOnly: true }),
+    "https://hatid.invalid",
+  );
+  assert.equal(url.pathname, "/notifications");
+  assert.equal(url.searchParams.get("state"), "unread");
+  assert.equal(url.searchParams.get("page"), "2");
+  assert.equal(url.searchParams.get("per_page"), "50");
+  assert.equal(url.searchParams.has("user_id"), false);
+  assert.equal(
+    new URL(
+      notificationPath({ page: 1, perPage: 10, unreadOnly: false }),
+      "https://hatid.invalid",
+    ).searchParams.get("state"),
+    "all",
+  );
+});
+
+/** Links can only open fixed internal record routes, even if a malformed payload reaches the client. */
+test("notification targets only open known routes with safe positive record IDs", () => {
+  assert.equal(
+    notificationHref({ kind: "delivery", id: 15 }),
+    "/deliveries/15",
+  );
+  assert.equal(
+    notificationHref({ kind: "remittance", id: 27 }),
+    "/collections?remittance=27",
+  );
+  for (const target of [
+    { kind: "https://untrusted.invalid", id: 1 },
+    { kind: "delivery", id: 0 },
+    { kind: "delivery", id: -1 },
+    { kind: "delivery", id: 1.5 },
+    { kind: "remittance", id: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    assert.equal(notificationHref(target as never), "/notifications");
+  }
+});
+
+/** Deep-link IDs cannot accept paths, exponents, whitespace or numbers JavaScript cannot represent. */
+test("record IDs require an exact safe positive decimal", () => {
+  assert.equal(parseRecordId("27"), 27);
+  for (const value of [
+    null,
+    "",
+    "0",
+    "-1",
+    "1.0",
+    "1e2",
+    " 3 ",
+    "3/../settings",
+    "9007199254740992",
+  ]) {
+    assert.equal(parseRecordId(value), null);
+  }
+});
 
 /** Date/search/method scope remains identical while CSV downloads deliberately omit current-page limits. */
 test("report URLs preserve applied dates and export the complete filtered scope", () => {

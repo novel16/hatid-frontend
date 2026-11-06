@@ -45,6 +45,68 @@ export interface PaginatedResponse<T> {
   };
 }
 
+export interface ApiNotification {
+  id: string;
+  category: "delivery" | "collection";
+  title: string;
+  message: string;
+  target: { kind: "delivery" | "remittance"; id: number };
+  read_at: string | null;
+  created_at: string;
+}
+
+export type NotificationPage = PaginatedResponse<ApiNotification> & {
+  unread_count: number;
+};
+
+export type NotificationFilters = PaginationState & { unreadOnly: boolean };
+export type NotificationView = NotificationFilters & { attempt: number };
+
+/** A repeated filter/page selection starts a fresh read, without reviving its older error or rows. */
+export function nextNotificationView(
+  current: NotificationView,
+  changes: Partial<NotificationFilters>,
+): NotificationView {
+  return { ...current, ...changes, attempt: current.attempt + 1 };
+}
+
+/** Encodes only the inbox's supported native page and read-state controls. */
+export function notificationPath(filters: NotificationFilters): string {
+  return (
+    "/notifications?" +
+    new URLSearchParams({
+      state: filters.unreadOnly ? "unread" : "all",
+      page: String(filters.page),
+      per_page: String(filters.perPage),
+    })
+  );
+}
+
+/** URL record IDs must be exact positive decimals that JavaScript can represent safely. */
+export function parseRecordId(value: string | null): number | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
+/** Synchronize the visible handover target while preserving other collection URL controls. */
+export function remittanceDetailPath(query: string, id: number | null): string {
+  const params = new URLSearchParams(query);
+  if (id !== null && parseRecordId(String(id)) !== null)
+    params.set("remittance", String(id));
+  else params.delete("remittance");
+  const search = params.toString();
+  return `/collections${search ? `?${search}` : ""}`;
+}
+
+/** Construct known internal routes rather than trusting an event-supplied URL. */
+export function notificationHref(target: ApiNotification["target"]): string {
+  if (parseRecordId(String(target.id)) === null) return "/notifications";
+  if (target.kind === "delivery") return `/deliveries/${target.id}`;
+  if (target.kind === "remittance") return remittanceDetailPath("", target.id);
+  return "/notifications";
+}
+
 export interface DirectoryFilters extends PaginationState {
   query: string;
   archived: boolean;

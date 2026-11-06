@@ -29,6 +29,7 @@ import {
   type Vehicle,
 } from "@/lib/api";
 import { DevicesPanel } from "@/features/settings/devices-panel";
+import { AccountNotifications } from "@/features/settings/account-notifications";
 import { useActions } from "@/components/providers";
 import {
   Pagination,
@@ -255,7 +256,7 @@ export function SettingsScreen() {
             title="Your preferences"
             description={
               session
-                ? "Saved to your account. Delivery activity currently uses sample data."
+                ? "Saved to your account. These preferences control new in-app alerts; existing activity and delivery/payment history stay available."
                 : "These preferences apply to this device's sample workspace."
             }
           >
@@ -269,7 +270,7 @@ export function SettingsScreen() {
               />
               <Preference
                 title="Collection & remittance alerts"
-                description="Highlight new receipt and handover records."
+                description="Show alerts for manually confirmed customer payments and seller handovers."
                 checked={preferences.collectionAlerts}
                 disabled={settingsBusy}
                 onChange={(value) => savePreference("collectionAlerts", value)}
@@ -580,8 +581,18 @@ function Preference({
   );
 }
 
-/** Pages the activity list while marking notifications read across the whole workspace. */
+/** Real rider activity stays separate from the explicit prototype's sample events. */
 export function NotificationsScreen() {
+  const { session } = useActions();
+  return session ? (
+    <AccountNotifications key={session.user.id} />
+  ) : (
+    <DemoNotifications />
+  );
+}
+
+/** Preserve the demo timeline and local read simulation only for explicit sample access. */
+function DemoNotifications() {
   const state = usePrototypeState();
   const { commit } = useActions();
   const pagination = usePagination(state.activity);

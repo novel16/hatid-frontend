@@ -7,6 +7,7 @@ import { Badge, Button, CheckField, Field, Modal } from "@/components/ui";
 import { ApiError, validationMessage, type ApiParcel } from "@/lib/api";
 import { money } from "@/lib/prototype/domain";
 import type { ParcelStatus, PaymentMethod } from "@/lib/prototype/types";
+import { useNotifications } from "@/features/settings/account-notifications";
 
 /** Confirms a manual outcome for a fixed selection with one stable operation on ambiguous retries. */
 export function AccountOutcomeDialog({
@@ -23,6 +24,7 @@ export function AccountOutcomeDialog({
   onClose: () => void;
 }) {
   const { request } = useActions();
+  const { refresh: refreshNotifications } = useNotifications();
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +73,7 @@ export function AccountOutcomeDialog({
         submission.current,
       );
       if (attempt !== viewVersion.current) return;
+      refreshNotifications();
       onSaved(response.data);
       onClose();
     } catch (cause) {
