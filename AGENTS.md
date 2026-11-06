@@ -1,3 +1,7 @@
+## Current Draft Autosave & Recovery — 6 November
+
+The user approved native browser recovery in API/rider frontend. Reuse lib/recovery.ts and features/settings/account-recovery.tsx. Scope IndexedDB by normalized API plus verified rider, persist exact operation UUID/body before HTTP, check native transaction completion and revisions, and block sending when storage fails. Pending/uncertain values are immutable; not_recorded is not cancellation; later429/422 do not resolve ambiguity. Only a definitive sole rejection is editable. Revision-check discards too. Confirm through the owned canonical probe, then redact raw values; prune only old confirmed metadata. No automatic sender, token/profile/directory cache, dependency or server schema. Inline forms own onSaved/read/GPS completion; recovery-panel actions explicitly invalidate shared read models afterward. Demo storage stays separate. Preserve user servers and sequential checks; main feature publishing remains authorized.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

@@ -1,5 +1,13 @@
 # Hatid rider client
 
+## Drafts & recovery — 6 November
+
+Actual rider parcel drafts autosave on this browser and restore selected IDs/typed amounts after owned API reads. Close flushes pending edits; Save & add another creates a new durable draft. Parcel, outcome and remittance submissions commit their original UUID/body in IndexedDB before sending. Storage failure blocks sending; interrupted/rejected retries keep frozen evidence until the server confirms it. Open Drafts & recovery (`/sync`) to check status and explicitly retry. Remittance retries recheck current seller share and require confirming the already completed handover, never another transfer.
+
+Two new application files: `lib/recovery.ts` owns typed rules/native transactions/shared attempt and probe workflows; `features/settings/account-recovery.tsx` owns the verified account provider/panel. `lib/recovery.test.ts` is test support. Existing forms and modal host are extended. Read AccountParcelEntry → useRecovery → lib/recovery → the API probe. Controllers/requests/services remain in the API repository. No dependency, service worker, automatic queue or auth change was added.
+
+Pending entries cannot be edited/discarded just because a check says not recorded yet. A definitive sole rejection permits correction. Native revisions guard stale edits and deletion. Confirmation removes raw draft/payload values and retains a small marker (latest50). Local browser data is JavaScript-readable, can be cleared/evicted and is not an encrypted vault/server backup. Wait for saved status before leaving; a browser shutdown can interrupt its last autosave. Reload recovery applies only to committed data. Inline forms finish their own success/GPS flow; panel confirmations refresh other server views explicitly.
+
 A responsive, clickable rider prototype for mobile and desktop. Built with Next.js 16.4.3, React 19.3, TypeScript, Manrope and shared forest/mint design tokens.
 
 ## Run in Windows / Git Bash

@@ -3,6 +3,7 @@ import { WorkspaceShell } from "@/components/workspace-shell";
 import { WorkspaceAccess } from "@/components/providers";
 import { ParcelEntryProvider } from "@/features/parcels/parcel-entry-screen";
 import { NotificationsProvider } from "@/features/settings/account-notifications";
+import { RecoveryProvider } from "@/features/settings/account-recovery";
 
 export const instant = false;
 
@@ -18,9 +19,11 @@ export default function WorkspaceLayout({ children }: { children: ReactNode }) {
     >
       <WorkspaceAccess>
         <NotificationsProvider>
-          <ParcelEntryProvider>
-            <WorkspaceShell>{children}</WorkspaceShell>
-          </ParcelEntryProvider>
+          <RecoveryProvider>
+            <ParcelEntryProvider>
+              <WorkspaceShell>{children}</WorkspaceShell>
+            </ParcelEntryProvider>
+          </RecoveryProvider>
         </NotificationsProvider>
       </WorkspaceAccess>
     </Suspense>

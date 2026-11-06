@@ -3,11 +3,23 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Check, CircleAlert } from "lucide-react";
 import { useActions } from "@/components/providers";
-import { Badge, Button, CheckField, Field, Modal } from "@/components/ui";
-import { ApiError, validationMessage, type ApiParcel } from "@/lib/api";
+import {
+  Badge,
+  Button,
+  CheckField,
+  Field,
+  LinkButton,
+  Modal,
+} from "@/components/ui";
+import { validationMessage, type ApiParcel, type NewOutcome } from "@/lib/api";
 import { money } from "@/lib/prototype/domain";
 import type { ParcelStatus, PaymentMethod } from "@/lib/prototype/types";
-import { useNotifications } from "@/features/settings/account-notifications";
+import { useRecovery } from "@/features/settings/account-recovery";
+import {
+  RecoveryFailure,
+  recoveryLocked,
+  type RecoveryEntry,
+} from "@/lib/recovery";
 
 /** Confirms a manual outcome for a fixed selection with one stable operation on ambiguous retries. */
 export function AccountOutcomeDialog({
@@ -23,8 +35,9 @@ export function AccountOutcomeDialog({
   onSaved: (parcels: ApiParcel[]) => void;
   onClose: () => void;
 }) {
-  const { request } = useActions();
-  const { refresh: refreshNotifications } = useNotifications();
+  const { request, notify } = useActions();
+  const { create, send, check } = useRecovery();
+  const recoveryEntry = useRef<RecoveryEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
@@ -38,8 +51,9 @@ export function AccountOutcomeDialog({
       ),
     ),
   );
-  const submission = useRef<Record<string, unknown> | null>(null);
+  const submission = useRef<NewOutcome | null>(null);
   const viewVersion = useRef(0);
+  const inFlight = useRef(false);
   const titles = {
     delivered: "Confirm delivery & full payment",
     held: "Put delivery on hold",
@@ -55,38 +69,80 @@ export function AccountOutcomeDialog({
     };
   }, []);
 
-  /** Pending or interrupted money writes stay visible until their result is checked. */
+  /** Frozen evidence is durable, so the rider can leave and recover it later. */
   function close() {
-    if (!saving && !uncertain) onClose();
+    if (!saving) onClose();
   }
 
   /** Reuse an identical operation after connection failure; server rejects changed/duplicate evidence. */
   async function persist() {
-    if (saving || !submission.current) return;
+    if (saving || inFlight.current || !submission.current) return;
+    inFlight.current = true;
     const attempt = viewVersion.current;
     setSaving(true);
     setError("");
     try {
-      const response = await request<{ data: ApiParcel[] }>(
-        `/deliveries/${encodeURIComponent(anchorId)}/outcomes`,
-        "POST",
-        submission.current,
-      );
+      recoveryEntry.current ??= create("delivery");
+      const observed = uncertain ? await check(recoveryEntry.current) : null;
+      const result =
+        observed?.state === "confirmed"
+          ? { entry: observed.entry, response: null }
+          : await send(observed?.entry ?? recoveryEntry.current, {
+              kind: "delivery",
+              anchorId: Number(anchorId),
+              values: submission.current,
+            });
+      recoveryEntry.current = result.entry;
       if (attempt !== viewVersion.current) return;
-      refreshNotifications();
-      onSaved(response.data);
+      let data = (result.response as { data?: ApiParcel[] } | null)?.data;
+      if (
+        !Array.isArray(data) ||
+        data.some(
+          /** Bad success bodies must never grant fabricated GPS evidence. */ (
+            parcel,
+          ) =>
+            !Number.isSafeInteger(parcel?.id) ||
+            typeof parcel.status !== "string" ||
+            !parcel.pricing,
+        )
+      ) {
+        try {
+          const response = await request<{ data: { parcels: ApiParcel[] } }>(
+            `/deliveries/${encodeURIComponent(anchorId)}`,
+          );
+          data = response.data.parcels;
+        } catch {
+          notify(
+            "Outcome confirmed. Open the saved delivery to review it and optionally save its location.",
+          );
+          data = [];
+        }
+      }
+      if (attempt !== viewVersion.current) return;
+      onSaved(
+        data.filter(
+          /** Only this selected successful outcome authorizes a location prompt. */ (
+            parcel,
+          ) => submission.current!.parcel_ids.includes(parcel.id),
+        ),
+      );
       onClose();
     } catch (cause) {
       if (attempt !== viewVersion.current) return;
-      const ambiguous =
-        !(cause instanceof ApiError) ||
-        cause.status === 0 ||
-        cause.status >= 500 ||
-        !!cause.errors.operation_id;
-      setUncertain(ambiguous);
-      if (!ambiguous) submission.current = null;
-      setError(validationMessage(cause));
+      if (cause instanceof RecoveryFailure && cause.entry)
+        recoveryEntry.current = cause.entry;
+      const locked = recoveryEntry.current
+        ? recoveryLocked(recoveryEntry.current)
+        : false;
+      setUncertain(locked);
+      if (!locked) submission.current = null;
+      setError(
+        validationMessage(
+          cause instanceof RecoveryFailure ? cause.cause : cause,
+        ),
+      );
     } finally {
+      inFlight.current = false;
       if (attempt === viewVersion.current) setSaving(false);
     }
   }
@@ -94,7 +150,7 @@ export function AccountOutcomeDialog({
   /** A full receipt is explicit per parcel; holding/failing/resuming creates no receipt. */
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || uncertain) return;
+    if (saving || inFlight.current || uncertain) return;
     const form = new FormData(event.currentTarget);
     submission.current = {
       operation_id: crypto.randomUUID(),
@@ -137,6 +193,7 @@ export function AccountOutcomeDialog({
     <Modal
       open
       onClose={close}
+      closeDisabled={saving}
       title={titles[outcome]}
       description={`${parcels.length} selected parcel(s). Other parcels and original intake weeks stay unchanged.`}
     >
@@ -156,6 +213,9 @@ export function AccountOutcomeDialog({
               <Button disabled={saving} onClick={persist}>
                 {saving ? "Checking…" : "Retry same action"}
               </Button>
+              <LinkButton href="/sync" onClick={onClose} variant="secondary">
+                Open recovery
+              </LinkButton>
             </div>
           )}
           <fieldset
@@ -313,11 +373,7 @@ export function AccountOutcomeDialog({
           </fieldset>
         </div>
         <footer className="dialog-footer">
-          <Button
-            variant="secondary"
-            disabled={saving || uncertain}
-            onClick={close}
-          >
+          <Button variant="secondary" disabled={saving} onClick={close}>
             Cancel
           </Button>
           <Button

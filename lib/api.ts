@@ -271,6 +271,22 @@ export interface NewParcel {
   override_reason?: string;
 }
 
+export interface NewOutcome {
+  operation_id: string;
+  parcel_ids: number[];
+  outcome: ParcelStatus;
+  note: string;
+  retry_at?: string;
+  receipt_confirmed?: boolean;
+  handover_confirmed?: boolean;
+  receipts?: {
+    parcel_id: number;
+    method: PaymentMethod;
+    amount: number;
+    reference?: string | null;
+  }[];
+}
+
 export interface ApiParcel {
   id: number;
   reference: string;
@@ -543,6 +559,11 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost").replace(
   /\/$/,
   "",
 );
+
+/** Namespace browser recovery by the same configured API that verifies the rider. */
+export function apiIdentity(): string {
+  return API_URL;
+}
 
 /** Share cookie-free JSON/binary transport, cancellation and sanitized errors across every account request. */
 export async function apiRequest<T>(

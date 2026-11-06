@@ -6323,3 +6323,21 @@ body:has(dialog[open]) {
 input[aria-invalid="true"] {
   border-color: #a63630;
 }
+.recovery-entry {
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.recovery-entry:last-child {
+  border-bottom: 0;
+}
+.recovery-heading,
+.recovery-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.recovery-heading {
+  justify-content: space-between;
+}

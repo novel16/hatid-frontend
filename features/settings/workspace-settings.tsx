@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 import { DevicesPanel } from "@/features/settings/devices-panel";
 import { AccountNotifications } from "@/features/settings/account-notifications";
+import { AccountRecovery } from "@/features/settings/account-recovery";
 import { useActions } from "@/components/providers";
 import {
   Pagination,
@@ -381,21 +382,32 @@ export function SettingsScreen() {
             </div>
           </Card>
           <Card
-            title="Offline & sync"
+            title={session ? "Drafts & recovery" : "Offline & sync"}
             action={
-              state.offline ? <CloudOff size={20} /> : <CloudCheck size={20} />
+              session ? (
+                <Database size={20} />
+              ) : state.offline ? (
+                <CloudOff size={20} />
+              ) : (
+                <CloudCheck size={20} />
+              )
             }
           >
             <div className="card-body form-stack">
-              <Badge tone={state.offline ? "amber" : "green"}>
-                {state.offline ? "Offline simulation" : "Online prototype"}
+              <Badge tone={!session && state.offline ? "amber" : "green"}>
+                {session
+                  ? "Saved on this browser"
+                  : state.offline
+                    ? "Offline simulation"
+                    : "Online prototype"}
               </Badge>
               <p className="small-muted">
-                {state.pendingChanges} local change(s) waiting in the demo sync
-                queue.
+                {session
+                  ? "Review local drafts and interrupted submissions. Server checks and retries are manual."
+                  : `${state.pendingChanges} local change(s) waiting in the demo sync queue.`}
               </p>
               <LinkButton href="/sync" variant="secondary">
-                Manage sync
+                {session ? "Open recovery" : "Manage sync"}
                 <ChevronRight size={15} />
               </LinkButton>
             </div>
@@ -665,6 +677,12 @@ function DemoNotifications() {
 }
 
 export function SyncScreen() {
+  const { session } = useActions();
+  return session ? <AccountRecovery /> : <DemoSyncScreen />;
+}
+
+/** Keep simulated synchronization exclusively inside the explicit demo workspace. */
+function DemoSyncScreen() {
   const state = usePrototypeState();
   const { commit } = useActions();
   return (

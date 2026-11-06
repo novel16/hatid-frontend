@@ -8,16 +8,16 @@ import {
   type FormEvent,
 } from "react";
 import { Check, Info, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useActions } from "@/components/providers";
 import { SearchSelect } from "@/components/search-select";
 import { Pagination } from "@/components/pagination";
-import { Button, CheckField, Field, Modal } from "@/components/ui";
+import { Button, CheckField, Field, LinkButton, Modal } from "@/components/ui";
 import {
   ApiError,
   collectionPath,
   errorMessage,
   validationMessage,
-  retainRemittanceOperation,
   type ApiCollection,
   type ApiRemittance,
   type ApiSellerBalance,
@@ -27,6 +27,12 @@ import {
 } from "@/lib/api";
 import { formatDate, money, parseMoney } from "@/lib/prototype/domain";
 import type { PaymentMethod } from "@/lib/prototype/types";
+import { useRecovery } from "@/features/settings/account-recovery";
+import {
+  RecoveryFailure,
+  recoveryLocked,
+  type RecoveryEntry,
+} from "@/lib/recovery";
 
 /** Records a completed external handover with one immutable operation during ambiguous retries. */
 export function AccountRemittanceDialog({
@@ -38,7 +44,11 @@ export function AccountRemittanceDialog({
   onClose: () => void;
   onSaved: (record: ApiRemittance) => void;
 }) {
-  const { request } = useActions();
+  const { request, notify } = useActions();
+  const router = useRouter();
+  const { create, send, check } = useRecovery();
+  const recoveryEntry = useRef<RecoveryEntry | null>(null);
+  const active = useRef(true);
   const [seller, setSeller] = useState(initialSeller);
   const [amount, setAmount] = useState(
     initialSeller ? String(initialSeller.balance.outstanding / 100) : "",
@@ -53,9 +63,17 @@ export function AccountRemittanceDialog({
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
   const snapshot = useRef<NewRemittance | null>(null);
+  const inFlight = useRef(false);
   const amountEdited = useRef(false);
   const balanceRead = useRef(0);
   const sellerId = seller?.id;
+  /** A closed/account-replaced form cannot update a later view. */
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   /** Search owed sellers, including archived identities, using ten-record API pages. */
   const loadSellers = useCallback(
@@ -146,15 +164,16 @@ export function AccountRemittanceDialog({
     setRefresh(/** Trigger one fresh server read. */ (current) => current + 1);
   }
 
-  /** Unconfirmed writes stay in this form until their identical operation is resolved. */
+  /** Durable unresolved evidence stays available after closing this form. */
   function close() {
-    if (!saving && !uncertain) onClose();
+    if (!saving) onClose();
   }
 
   /** Retrying an interrupted success sends the exact same amount, seller, reference and UUID. */
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || checking) return;
+    if (saving || inFlight.current || checking) return;
+    inFlight.current = true;
     try {
       if (!snapshot.current) {
         if (!seller || !verified || !confirmed)
@@ -179,49 +198,76 @@ export function AccountRemittanceDialog({
       setSaving(true);
       setError("");
       const values = snapshot.current;
-      const { data } = await request<{ data: ApiRemittance }>(
-        "/remittances",
-        "POST",
-        values,
-      );
-      if (
-        !Number.isSafeInteger(data?.id) ||
-        data.id <= 0 ||
-        !data.code ||
-        data.amount !== values.amount ||
-        data.method !== values.method ||
-        data.seller?.id !== values.seller_id
-      ) {
-        throw new ApiError(
-          "Unable to confirm the saved handover. Retry this same operation.",
-          0,
+      recoveryEntry.current ??= create("remittance");
+      const observed = uncertain ? await check(recoveryEntry.current) : null;
+      if (uncertain && observed?.state !== "confirmed") {
+        const response = await request<CollectionPage<ApiSellerBalance>>(
+          `/collections/sellers?seller_id=${values.seller_id}&per_page=10`,
         );
+        const current = response.data.find(
+          /** A retry uses only the original seller and fresh server share. */ (
+            record,
+          ) => record.id === values.seller_id,
+        );
+        if (!current || current.balance.outstanding < values.amount)
+          throw new Error(
+            "The original amount exceeds the current seller share. Keep this evidence and review it in recovery.",
+          );
       }
+      if (!active.current) return;
+      const result =
+        observed?.state === "confirmed"
+          ? { entry: observed.entry, response: null }
+          : await send(observed?.entry ?? recoveryEntry.current, {
+              kind: "remittance",
+              values,
+            });
+      recoveryEntry.current = result.entry;
+      if (!active.current) return;
+      const data = (result.response as { data?: ApiRemittance } | null)?.data;
       snapshot.current = null;
       setUncertain(false);
-      onSaved(data);
+      if (
+        data &&
+        Number.isSafeInteger(data.id) &&
+        data.id === result.entry.target!.id &&
+        data.code &&
+        data.amount === values.amount &&
+        data.method === values.method &&
+        data.seller?.id === values.seller_id
+      )
+        onSaved(data);
+      else {
+        notify(
+          "Original seller handover confirmed. Open the saved record to review it.",
+        );
+        onClose();
+        router.push(`/collections?remittance=${result.entry.target!.id}`);
+      }
     } catch (cause) {
-      const retained = retainRemittanceOperation(
-        snapshot.current,
-        uncertain,
-        cause,
-      );
-      if (retained) {
-        snapshot.current = retained;
+      if (!active.current) return;
+      if (cause instanceof RecoveryFailure && cause.entry)
+        recoveryEntry.current = cause.entry;
+      const underlying = cause instanceof RecoveryFailure ? cause.cause : cause;
+      const locked = recoveryEntry.current
+        ? recoveryLocked(recoveryEntry.current)
+        : false;
+      if (locked) {
         setUncertain(true);
         setError(
-          "The save could not be confirmed. Keep this form open and retry the same handover; its operation prevents a second record.",
+          `${validationMessage(underlying)} The original handover is preserved in Drafts & recovery. Do not hand over the money again.`,
         );
       } else {
         snapshot.current = null;
         setUncertain(false);
         setConfirmed(false);
-        setError(validationMessage(cause));
-        if (cause instanceof ApiError && cause.status === 422)
+        setError(validationMessage(underlying));
+        if (underlying instanceof ApiError && underlying.status === 422)
           setVerified(false);
       }
     } finally {
-      setSaving(false);
+      inFlight.current = false;
+      if (active.current) setSaving(false);
     }
   }
 
@@ -230,7 +276,7 @@ export function AccountRemittanceDialog({
     <Modal
       open
       onClose={close}
-      closeDisabled={locked}
+      closeDisabled={saving}
       title="Record a seller handover"
       description="Complete the actual handover first. Hatid records it and transfers no money."
     >
@@ -240,6 +286,11 @@ export function AccountRemittanceDialog({
             <div className="form-error" role="alert">
               {error}
             </div>
+          )}
+          {uncertain && (
+            <LinkButton href="/sync" variant="secondary" onClick={onClose}>
+              Open recovery
+            </LinkButton>
           )}
           {!verified && seller && !checking && !locked && (
             <Button variant="secondary" onClick={refreshBalance}>
@@ -355,7 +406,7 @@ export function AccountRemittanceDialog({
           </fieldset>
         </div>
         <footer className="dialog-footer">
-          <Button variant="secondary" disabled={locked} onClick={close}>
+          <Button variant="secondary" disabled={saving} onClick={close}>
             Cancel
           </Button>
           <Button

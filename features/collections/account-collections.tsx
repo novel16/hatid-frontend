@@ -39,7 +39,7 @@ import {
   AccountRemittanceDialog,
   RemittanceDetail,
 } from "./account-remittance-dialog";
-import { useNotifications } from "@/features/settings/account-notifications";
+import { useRecovery } from "@/features/settings/account-recovery";
 
 /** Displays only the verified rider's actual receipt and seller-share ledger. */
 export function AccountCollections({
@@ -50,7 +50,7 @@ export function AccountCollections({
   const { notify } = useActions();
   const router = useRouter();
   const params = useSearchParams();
-  const { refresh: refreshNotifications } = useNotifications();
+  const { confirmedRevision } = useRecovery();
   const [view, setView] = useState<CollectionView>(
     remittanceId === null ? "receipts" : "remittances",
   );
@@ -71,7 +71,6 @@ export function AccountCollections({
 
   /** Reloads the current ledger without changing its search or page after confirmed persistence. */
   function saved(record: ApiRemittance) {
-    refreshNotifications();
     setHandover(null);
     setSummary(null);
     setRevision(
@@ -83,7 +82,10 @@ export function AccountCollections({
     );
   }
 
-  const common = { revision, onSummary: setSummary };
+  const common = {
+    revision: revision + confirmedRevision,
+    onSummary: setSummary,
+  };
   return (
     <>
       <PageHeading

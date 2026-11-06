@@ -29,6 +29,7 @@ import { Avatar, Badge, Brand, Modal } from "./ui";
 import { useActions } from "./providers";
 import { useParcelEntry } from "@/features/parcels/parcel-entry-screen";
 import { useNotifications } from "@/features/settings/account-notifications";
+import { useRecovery } from "@/features/settings/account-recovery";
 
 const links = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -50,6 +51,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
   const { unreadCount } = useNotifications();
+  const { entries: recoveryEntries, error: recoveryError } = useRecovery();
+  const recoveryCount = recoveryEntries?.filter(
+    /** Confirmed markers need no rider action. */ (entry) =>
+      entry.status !== "confirmed",
+  ).length;
   const { openParcel } = useParcelEntry();
   const riderName = session?.user.name ?? state.settings.riderName;
   const compactView =
@@ -71,6 +77,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       "/earnings",
       "/reports",
       "/notifications",
+      "/sync",
     ].some(
       /** Only implemented account pages receive an account-data label. */
       (prefix) => path.startsWith(prefix),
@@ -113,7 +120,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         : path.startsWith("/settings")
           ? "Settings"
           : path.startsWith("/sync")
-            ? "Offline & sync"
+            ? session
+              ? "Drafts & recovery"
+              : "Offline & sync"
             : "Notifications");
 
   return (
@@ -265,7 +274,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               )}
               <span>
                 {session
-                  ? "Online saves only"
+                  ? recoveryError
+                    ? "Recovery needs attention"
+                    : recoveryCount === undefined
+                      ? "Checking local work…"
+                      : recoveryCount
+                        ? `${recoveryCount} to review`
+                        : "Drafts & recovery"
                   : state.offline
                     ? "Offline"
                     : "All changes saved"}

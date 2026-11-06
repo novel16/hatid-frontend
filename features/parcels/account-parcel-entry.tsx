@@ -1,11 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Check, Info, Plus, ShieldCheck } from "lucide-react";
 import { useActions } from "@/components/providers";
-import { Badge, Button, Card, CheckField, Field, Modal } from "@/components/ui";
 import {
-  ApiError,
+  Badge,
+  Button,
+  Card,
+  CheckField,
+  Field,
+  LinkButton,
+  Modal,
+} from "@/components/ui";
+import {
   errorMessage,
   validationMessage,
   type ApiBatch,
@@ -29,31 +42,127 @@ import {
 import { SellerDialog } from "@/features/sellers/seller-dialog";
 import { BatchDialog } from "@/features/batches/batch-components";
 import type { BatchPage, NewBatch, NewSeller } from "@/lib/api";
+import { useRecovery } from "@/features/settings/account-recovery";
+import {
+  recoveryLocked,
+  RecoveryFailure,
+  type RecoveryEntry,
+  type ParcelDraft,
+} from "@/lib/recovery";
 
 /** Encodes one owned parcel and freezes its reviewed amounts through the real API. */
 export function AccountParcelEntry({
   initialBatchId,
+  draftId,
   onClose,
   onSaved,
 }: {
   initialBatchId?: string;
+  draftId?: string;
   onClose: () => void;
-  onSaved: (another: boolean) => void;
+  onSaved: (another: boolean, nextDraftId?: string) => void;
+}) {
+  const { openDraft } = useRecovery();
+  const [entry, setEntry] = useState<RecoveryEntry | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  /** Enable the form only after its local identity has been durably created/restored. */
+  useEffect(() => {
+    let active = true;
+    openDraft(initialBatchId, draftId).then(
+      /** Ignore a closed/replaced account form. */ (row) => {
+        if (active) {
+          setEntry(row);
+          setError("");
+        }
+      },
+      /** Storage failure cannot fall back to an unprotected form. */ (
+        cause,
+      ) => {
+        if (active) setError(errorMessage(cause));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [openDraft, initialBatchId, draftId, retry]);
+  if (!entry)
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title="Add parcel"
+        description="Restoring your local parcel draft."
+      >
+        <div className="dialog-body form-stack">
+          {error ? (
+            <>
+              <p role="alert">{error}</p>
+              <Button
+                onClick={
+                  /** Explicitly retry denied or temporarily blocked storage. */ () =>
+                    setRetry((current) => current + 1)
+                }
+              >
+                Try again
+              </Button>
+              <LinkButton href="/sync" variant="secondary" onClick={onClose}>
+                Open recovery
+              </LinkButton>
+            </>
+          ) : (
+            <p role="status">Loading draft…</p>
+          )}
+        </div>
+      </Modal>
+    );
+  return (
+    <AccountParcelForm
+      key={entry.id}
+      initialEntry={entry}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
+  );
+}
+
+/** Keep intake fields and related forms together while the shared recovery layer owns persistence. */
+function AccountParcelForm({
+  initialEntry,
+  onClose,
+  onSaved,
+}: {
+  initialEntry: RecoveryEntry;
+  onClose: () => void;
+  onSaved: (another: boolean, nextDraftId?: string) => void;
 }) {
   const { request, notify } = useActions();
-  const initialBatch = initialBatchId;
+  const { saveDraft, send, check, create } = useRecovery();
+  const [restored] = useState(initialEntry.draft!);
+  const entryRef = useRef(initialEntry);
+  const latestDraft = useRef(restored);
+  const savedDraft = useRef(JSON.stringify(restored));
+  const queuedSave = useRef(Promise.resolve());
+  const [hydrating, setHydrating] = useState(true);
+  const [draftStatus, setDraftStatus] = useState(
+    "Draft saved on this browser.",
+  );
+  const [savedKey, setSavedKey] = useState(JSON.stringify(restored));
   const [batch, setBatch] = useState<ApiBatch | null>(null);
   const [customer, setCustomer] = useState<ApiCustomer | null>(null);
-  const [addressId, setAddressId] = useState("");
+  const [addressId, setAddressId] = useState(restored.addressId);
   const [seller, setSeller] = useState<ApiSeller | null>(null);
   const [creating, setCreating] = useState<"customer" | "seller" | null>(null);
   const [newBatch, setNewBatch] = useState<NewBatch | null>(null);
   const [openingBatch, setOpeningBatch] = useState(false);
-  const [quote, setQuote] = useState("");
-  const [fee, setFee] = useState("0");
-  const [mode, setMode] = useState<FeeMode>("included");
-  const [method, setMethod] = useState<PaymentMethod>("cash");
-  const [override, setOverride] = useState(false);
+  const [quote, setQuote] = useState(restored.quote);
+  const [fee, setFee] = useState(restored.fee || "0");
+  const [mode, setMode] = useState<FeeMode>(restored.mode);
+  const [method, setMethod] = useState<PaymentMethod>(restored.method);
+  const [override, setOverride] = useState(restored.override);
+  const [description, setDescription] = useState(restored.description);
+  const [note, setNote] = useState(restored.note);
+  const [overrideReason, setOverrideReason] = useState(restored.overrideReason);
   const [saving, setSaving] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
@@ -63,6 +172,7 @@ export function AccountParcelEntry({
     null,
   );
   const viewVersion = useRef(0);
+  const inFlight = useRef(false);
   const batchReadVersion = useRef(0);
   const activeAddresses =
     customer?.addresses.filter(
@@ -83,31 +193,134 @@ export function AccountParcelEntry({
     };
   }, []);
 
-  /** A batch-detail entry link supplies an owned server batch, not a sample selection. */
+  /** Revalidate saved relationship IDs without applying changed seller prices to typed draft values. */
   useEffect(() => {
     let active = true;
-    const readVersion = ++batchReadVersion.current;
-    if (initialBatch) {
-      request<{ data: ApiBatch }>(
-        `/batches/${encodeURIComponent(initialBatch)}`,
-      ).then(
-        /** Ignore a batch response if the user already left this entry view. */
-        (response) => {
-          if (active && readVersion === batchReadVersion.current)
-            setBatch(response.data);
-        },
-        /** Invalid/foreign ranges leave the picker available and explain the error. */
-        (cause) => {
-          if (active && readVersion === batchReadVersion.current)
-            setError(errorMessage(cause));
-        },
-      );
+    /** Load sequentially to keep the user's device and API workload small. */
+    async function restore() {
+      const problems: string[] = [];
+      for (const kind of ["batch", "customer", "seller"] as const) {
+        const id = restored[`${kind}Id`];
+        if (!id) continue;
+        try {
+          if (!/^\d+$/.test(id)) throw new Error("Invalid saved selection.");
+          const { data } = await request<{
+            data: ApiBatch | ApiCustomer | ApiSeller;
+          }>(`/${kind === "batch" ? "batches" : `${kind}s`}/${id}`);
+          if (!active) return;
+          if ("archived_at" in data && data.archived_at)
+            throw new Error("Archived selection.");
+          if (kind === "batch") setBatch(data as ApiBatch);
+          else if (kind === "customer") setCustomer(data as ApiCustomer);
+          else setSeller(data as ApiSeller);
+        } catch {
+          problems.push(
+            `Choose a current owned ${kind}; the previous selection could not be restored.`,
+          );
+        }
+      }
+      if (active) {
+        setError(problems.join(" "));
+        setHydrating(false);
+      }
     }
-    /** Cleanup prevents stale URL defaults from replacing another form. */
+    void restore();
     return () => {
       active = false;
     };
-  }, [initialBatch, request]);
+  }, [restored, request]);
+
+  const draftKey = JSON.stringify({
+    batchId: String(batch?.id ?? restored.batchId),
+    customerId: String(customer?.id ?? restored.customerId),
+    sellerId: String(seller?.id ?? restored.sellerId),
+    addressId,
+    quote,
+    fee,
+    mode,
+    method,
+    override,
+    description,
+    note,
+    overrideReason,
+  } satisfies ParcelDraft);
+  /** Serialize writes from this tab; native revisions still reject edits made in another tab. */
+  const flushDraft = useCallback(
+    (draft?: ParcelDraft) => {
+      if (draft) latestDraft.current = draft;
+      const operation = queuedSave.current
+        .catch(
+          /** Permit an explicit retry after a storage failure. */ () => {},
+        )
+        .then(
+          /** Save only changed editable values, never a pending payload. */ async () => {
+            const next = latestDraft.current;
+            const signature = JSON.stringify(next);
+            if (
+              savedDraft.current === signature ||
+              recoveryLocked(entryRef.current)
+            )
+              return;
+            setDraftStatus("Saving draft…");
+            const result = await saveDraft(entryRef.current, next);
+            entryRef.current = result;
+            savedDraft.current = signature;
+            setSavedKey(signature);
+            setDraftStatus("Draft saved on this browser.");
+          },
+        );
+      queuedSave.current = operation;
+      return operation;
+    },
+    [saveDraft],
+  );
+  /** Debounce typing; saving/uncertain submissions keep the original frozen snapshot. */
+  useEffect(() => {
+    latestDraft.current = JSON.parse(draftKey) as ParcelDraft;
+    if (hydrating || saving || uncertain || savedDraft.current === draftKey)
+      return;
+    const timer = window.setTimeout(
+      /** Surface failed autosave rather than claiming the draft is safe. */ () => {
+        void flushDraft().catch(
+          /** Keep unsaved fields visible after an autosave failure. */ (
+            cause,
+          ) => {
+            setDraftStatus(
+              "Draft not saved. Keep this form open and try again.",
+            );
+            setError(errorMessage(cause));
+          },
+        );
+      },
+      400,
+    );
+    return () => window.clearTimeout(timer);
+  }, [draftKey, hydrating, saving, uncertain, flushDraft]);
+  /** Flush when the tab is hidden; a full browser shutdown can still interrupt its final transaction. */
+  useEffect(() => {
+    /** Native page lifecycle events do not await promises, so status remains honest until commit. */
+    function flushHidden() {
+      void flushDraft().catch(
+        /** Visible forms retain a retryable storage error. */ (cause) => {
+          setDraftStatus("Draft not saved.");
+          setError(errorMessage(cause));
+        },
+      );
+    }
+    /** Hidden tabs get a last local save without any HTTP request. */
+    function visibility() {
+      if (document.visibilityState === "hidden") flushHidden();
+    }
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("pagehide", flushHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", flushHidden);
+      void flushDraft().catch(
+        /** A failed navigation flush leaves the previous committed draft available. */ () => {},
+      );
+    };
+  }, [flushDraft]);
 
   /** Restore seller defaults when the visible override option is turned off. */
   function toggleOverride(enabled: boolean) {
@@ -120,49 +333,66 @@ export function AccountParcelEntry({
 
   /** Retries a possibly saved operation with identical details instead of creating a duplicate. */
   async function persist() {
-    if (saving || !submission.current) return;
+    if (saving || inFlight.current || !submission.current) return;
+    inFlight.current = true;
     const attempt = viewVersion.current;
     const snapshot = submission.current;
     setSaving(true);
     setError("");
     try {
-      const response = await request<{ data: ApiParcel }>(
-        "/parcels",
-        "POST",
-        snapshot.values,
-      );
+      await flushDraft(JSON.parse(draftKey) as ParcelDraft);
+      const observed = uncertain ? await check(entryRef.current) : null;
+      const result =
+        observed?.state === "confirmed"
+          ? { entry: observed.entry, response: null }
+          : await send(observed?.entry ?? entryRef.current, {
+              kind: "parcel",
+              values: snapshot.values,
+            });
+      entryRef.current = result.entry;
       if (attempt !== viewVersion.current) return;
-      const parcel = response?.data;
-      if (
-        !parcel ||
-        !Number.isSafeInteger(parcel.id) ||
-        parcel.id <= 0 ||
-        typeof parcel.reference !== "string" ||
-        !parcel.reference.trim()
-      )
-        throw new ApiError(
-          "The parcel save could not be confirmed. Retry the same save.",
-          0,
-        );
       submission.current = null;
       setUncertain(false);
-      notify(`${parcel.reference} saved to your account.`);
+      const parcel = (result.response as { data?: ApiParcel } | null)?.data;
+      notify(
+        `${parcel?.reference ?? `Parcel #${result.entry.target!.id}`} saved to your account.`,
+      );
       if (snapshot.another) {
-        formRef.current?.reset();
-        setQuote("");
+        try {
+          const next = create("parcel");
+          const nextDraft = {
+            ...latestDraft.current,
+            quote: "",
+            description: "",
+            note: "",
+            overrideReason: "",
+          };
+          const saved = await saveDraft(next, nextDraft);
+          if (attempt === viewVersion.current) onSaved(true, saved.id);
+        } catch {
+          notify(
+            "Parcel saved. The next draft could not be created; reopen Add parcel when storage is available.",
+            true,
+          );
+          onSaved(false);
+        }
+      } else {
+        onSaved(false);
       }
-      onSaved(snapshot.another);
     } catch (cause) {
       if (attempt !== viewVersion.current) return;
-      const ambiguous =
-        !(cause instanceof ApiError) ||
-        cause.status === 0 ||
-        cause.status >= 500 ||
-        !!cause.errors.operation_id;
-      setUncertain(ambiguous);
-      if (!ambiguous) submission.current = null;
-      setError(validationMessage(cause));
+      if (cause instanceof RecoveryFailure && cause.entry)
+        entryRef.current = cause.entry;
+      const locked = recoveryLocked(entryRef.current);
+      setUncertain(locked);
+      if (!locked) submission.current = null;
+      setError(
+        validationMessage(
+          cause instanceof RecoveryFailure ? cause.cause : cause,
+        ),
+      );
     } finally {
+      inFlight.current = false;
       if (attempt === viewVersion.current) setSaving(false);
     }
   }
@@ -170,11 +400,23 @@ export function AccountParcelEntry({
   /** Snapshot the reviewed inputs once; validation failures preserve every field for correction. */
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || uncertain) return;
+    if (saving || inFlight.current || uncertain || hydrating) return;
     try {
       if (!customer || !addressId || !seller || !batch)
         throw new Error(
           "Choose a customer, address, seller and weekly batch first.",
+        );
+      if (
+        !activeAddresses.some(
+          /** A removed/archived saved address requires a fresh selection. */ (
+            address,
+          ) => address.id === Number(addressId),
+        )
+      )
+        throw new Error("Choose a current delivery address.");
+      if (!override && (parseMoney(fee) !== seller.fee || mode !== seller.mode))
+        throw new Error(
+          "Seller defaults changed. Re-select the seller to apply them, or enable a pricing override with a reason.",
         );
       const values = new FormData(event.currentTarget);
       const pricing = priceParcel(parseMoney(quote), parseMoney(fee), mode);
@@ -301,9 +543,18 @@ export function AccountParcelEntry({
     setNewBatch(null);
   }
 
-  /** Preserve an unresolved operation and its identical retry payload until the API confirms it. */
-  function close() {
-    if (!saving && !uncertain) onClose();
+  /** Flush editable values before dismissing; frozen submissions remain accessible in recovery. */
+  async function close() {
+    if (saving) return;
+    try {
+      await flushDraft(JSON.parse(draftKey) as ParcelDraft);
+      onClose();
+    } catch (cause) {
+      setError(errorMessage(cause));
+      setDraftStatus(
+        "Draft not saved. Try closing again after restoring storage.",
+      );
+    }
   }
 
   return (
@@ -314,9 +565,18 @@ export function AccountParcelEntry({
       title="Add parcel"
       description="Choose a customer, batch and seller. Review the amounts before saving."
       onClose={close}
-      closeDisabled={saving || uncertain}
+      closeDisabled={saving}
     >
       <div className="dialog-body form-stack">
+        <p role="status" className="small-muted">
+          {hydrating
+            ? "Checking saved selections…"
+            : draftStatus.includes("not saved")
+              ? draftStatus
+              : savedKey !== draftKey
+                ? "Saving draft…"
+                : draftStatus}
+        </p>
         {error && (
           <p role="alert" className="notice notice-amber">
             {error}
@@ -331,11 +591,14 @@ export function AccountParcelEntry({
             <Button disabled={saving} onClick={persist}>
               {saving ? "Checking…" : "Retry same save"}
             </Button>
+            <LinkButton href="/sync" variant="secondary" onClick={onClose}>
+              Open recovery
+            </LinkButton>
           </div>
         )}
         <form ref={formRef} onSubmit={submit} className="entry-layout">
           <fieldset
-            disabled={saving || uncertain}
+            disabled={saving || uncertain || hydrating}
             className="form-stack form-fieldset"
           >
             <Card
@@ -458,6 +721,11 @@ export function AccountParcelEntry({
                 <Field label="What’s inside?" hint="Optional">
                   <input
                     name="description"
+                    value={description}
+                    onChange={
+                      /** Autosave the typed optional description. */ (event) =>
+                        setDescription(event.target.value)
+                    }
                     maxLength={150}
                     placeholder="e.g. Skincare bundle"
                   />
@@ -531,6 +799,12 @@ export function AccountParcelEntry({
                     <Field label="Reason for pricing override" required>
                       <input
                         name="override_reason"
+                        value={overrideReason}
+                        onChange={
+                          /** Keep the explanation with its draft pricing. */ (
+                            event,
+                          ) => setOverrideReason(event.target.value)
+                        }
                         required
                         minLength={3}
                         maxLength={400}
@@ -569,6 +843,11 @@ export function AccountParcelEntry({
                 <Field label="Delivery notes">
                   <textarea
                     name="note"
+                    value={note}
+                    onChange={
+                      /** Preserve delivery notes across refresh. */ (event) =>
+                        setNote(event.target.value)
+                    }
                     rows={3}
                     maxLength={500}
                     placeholder="Landmark, preferred time or reminder…"
@@ -624,23 +903,23 @@ export function AccountParcelEntry({
             </p>
           </aside>
           <footer className="dialog-footer parcel-entry-actions">
-            <Button
-              variant="secondary"
-              onClick={close}
-              disabled={saving || uncertain}
-            >
-              Cancel
+            <Button variant="secondary" onClick={close} disabled={saving}>
+              Close draft
             </Button>
             <Button
               type="submit"
               value="another"
               variant="secondary"
-              disabled={saving || uncertain}
+              disabled={saving || uncertain || hydrating}
             >
               <Plus size={16} />
               Save & add another
             </Button>
-            <Button type="submit" value="save" disabled={saving || uncertain}>
+            <Button
+              type="submit"
+              value="save"
+              disabled={saving || uncertain || hydrating}
+            >
               <Check size={16} />
               {saving ? "Saving…" : "Save parcel"}
             </Button>

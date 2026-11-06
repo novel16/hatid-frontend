@@ -41,9 +41,10 @@ import { AccountParcelEntry } from "./account-parcel-entry";
 import { SearchSelect } from "@/components/search-select";
 import { getSelectPage } from "@/lib/pagination";
 import { directoryDescription } from "./parcel-directory";
+import { useRecovery } from "@/features/settings/account-recovery";
 
 interface ParcelEntryActions {
-  openParcel: (batchId?: string) => void;
+  openParcel: (batchId?: string, draftId?: string) => void;
   revision: number;
 }
 const ParcelEntryContext = createContext<ParcelEntryActions | null>(null);
@@ -66,15 +67,20 @@ function ParcelEntryHost({
   children: ReactNode;
   account: boolean;
 }) {
-  const [draft, setDraft] = useState<{ batchId?: string } | null>(null);
+  const { confirmedRevision } = useRecovery();
+  const [draft, setDraft] = useState<{
+    batchId?: string;
+    draftId?: string;
+  } | null>(null);
   const [revision, setRevision] = useState(0);
   const openParcel = useCallback(
     /** Repeated triggers cannot replace an open or unresolved draft. */ (
       batchId?: string,
+      draftId?: string,
     ) =>
       setDraft(
         /** Preserve selections if a modal already exists. */ (current) =>
-          current ?? { batchId },
+          current ?? { batchId, draftId },
       ),
     [],
   );
@@ -86,22 +92,28 @@ function ParcelEntryHost({
   const saved = useCallback(
     /** Refresh account lists only after confirmed persistence. */ (
       another: boolean,
+      nextDraftId?: string,
     ) => {
       setRevision(
         /** Signal a saved parcel, not a field edit. */ (current) =>
           current + 1,
       );
       if (!another) setDraft(null);
+      else if (nextDraftId) setDraft({ draftId: nextDraftId });
     },
     [],
   );
   return (
-    <ParcelEntryContext.Provider value={{ openParcel, revision }}>
+    <ParcelEntryContext.Provider
+      value={{ openParcel, revision: revision + confirmedRevision }}
+    >
       {children}
       {draft &&
         (account ? (
           <AccountParcelEntry
+            key={draft.draftId ?? "latest"}
             initialBatchId={draft.batchId}
+            draftId={draft.draftId}
             onClose={close}
             onSaved={saved}
           />
@@ -155,12 +167,13 @@ export function ParcelEntryScreen() {
   const router = useRouter();
   const params = useSearchParams();
   const batchId = params.get("batch") ?? undefined;
+  const draftId = params.get("draft") ?? undefined;
   useEffect(
     /** Retain bookmarks while moving the actual form into the workspace modal. */ () => {
-      openParcel(batchId);
+      openParcel(batchId, draftId);
       router.replace("/deliveries");
     },
-    [batchId, openParcel, router],
+    [batchId, draftId, openParcel, router],
   );
   return null;
 }
