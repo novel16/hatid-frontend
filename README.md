@@ -1,5 +1,9 @@
 # Hatid rider client
 
+## Notification popover — 6 November
+
+The bell toggles an anchored dropdown panel below the icon. The page remains interactive; outside click, Escape, leaving the panel by keyboard, its close button and related navigation dismiss it. Display five records per API page, with All/Unread, single/all read, Preferences and saved delivery/remittance links. Pagination is compact Prev / Page X of Y / Next with no entries or Showing. Mobile positioning respects viewport gutters and one parent scroller. Existing /notifications bookmarks open the panel over Dashboard. Demo activity shares the panel/five-row pagination while staying separate. Reuse existing files and Pagination; no UI dependency or API/schema change.
+
 ## Drafts & recovery — 6 November
 
 Actual rider parcel drafts autosave on this browser and restore selected IDs/typed amounts after owned API reads. Close flushes pending edits; Save & add another creates a new durable draft. Parcel, outcome and remittance submissions commit their original UUID/body in IndexedDB before sending. Storage failure blocks sending; interrupted/rejected retries keep frozen evidence until the server confirms it. Open Drafts & recovery (`/sync`) to check status and explicitly retry. Remittance retries recheck current seller share and require confirming the already completed handover, never another transfer.

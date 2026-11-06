@@ -53,6 +53,12 @@ test("remittance detail URLs replace and clear targets while preserving other fi
 
 /** Account pagination/filter scope is encoded without allowing client-supplied ownership. */
 test("notification URLs preserve unread filtering and native pagination", () => {
+  const compact = new URL(
+    notificationPath({ page: 2, perPage: 5, unreadOnly: false }),
+    "https://hatid.invalid",
+  );
+  assert.equal(compact.searchParams.get("per_page"), "5");
+  assert.equal(compact.searchParams.get("page"), "2");
   const url = new URL(
     notificationPath({ page: 2, perPage: 50, unreadOnly: true }),
     "https://hatid.invalid",

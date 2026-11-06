@@ -28,7 +28,10 @@ import { usePrototypeState } from "@/lib/prototype/store";
 import { Avatar, Badge, Brand, Modal } from "./ui";
 import { useActions } from "./providers";
 import { useParcelEntry } from "@/features/parcels/parcel-entry-screen";
-import { useNotifications } from "@/features/settings/account-notifications";
+import {
+  NotificationPopover,
+  useNotifications,
+} from "@/features/settings/account-notifications";
 import { useRecovery } from "@/features/settings/account-recovery";
 
 const links = [
@@ -50,7 +53,7 @@ const links = [
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, openInbox, closeInbox, inboxOpen } = useNotifications();
   const { entries: recoveryEntries, error: recoveryError } = useRecovery();
   const recoveryCount = recoveryEntries?.filter(
     /** Confirmed markers need no rider action. */ (entry) =>
@@ -286,23 +289,32 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                     : "All changes saved"}
               </span>
             </Link>
-            <Link
-              className="icon-button notification-button"
-              href="/notifications"
-              aria-label={
-                session && unreadCount !== null
-                  ? `Open notifications, ${unreadCount} unread`
-                  : "Open notifications"
-              }
-            >
-              <Bell size={20} />
-              {session && unreadCount !== null && unreadCount > 0 && (
-                <span className="notification-count" aria-hidden="true">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-              {!session && !state.notificationsRead && <i />}
-            </Link>
+            <NotificationPopover>
+              <button
+                type="button"
+                className="icon-button notification-button"
+                onClick={
+                  /** The bell toggles its own anchored panel. */ () =>
+                    inboxOpen ? closeInbox() : openInbox()
+                }
+                aria-haspopup="dialog"
+                aria-expanded={inboxOpen}
+                aria-controls="notification-panel"
+                aria-label={
+                  session && unreadCount !== null
+                    ? `Open notifications, ${unreadCount} unread`
+                    : "Open notifications"
+                }
+              >
+                <Bell size={20} />
+                {session && unreadCount !== null && unreadCount > 0 && (
+                  <span className="notification-count" aria-hidden="true">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+                {!session && !state.notificationsRead && <i />}
+              </button>
+            </NotificationPopover>
             <Link
               className="top-avatar"
               href="/settings"

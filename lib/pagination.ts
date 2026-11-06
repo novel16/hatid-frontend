@@ -1,5 +1,6 @@
 export const PAGE_SIZES = [10, 50, 100] as const;
-export type PageSize = (typeof PAGE_SIZES)[number];
+/** Fixed compact lists may use five rows; full-page entry choices remain10/50/100. */
+export type PageSize = (typeof PAGE_SIZES)[number] | 5;
 export interface PaginationState {
   page: number;
   perPage: PageSize;

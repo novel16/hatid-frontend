@@ -175,12 +175,16 @@ export function Pagination({
 }
 
 /** Paginates already-loaded sample records; API callers pass their server state directly. */
-export function usePagination<T>(items: readonly T[], resetKey = "") {
+export function usePagination<T>(
+  items: readonly T[],
+  resetKey = "",
+  initialPerPage: PageSize = 10,
+) {
   const [selection, setSelection] = useState<
     PaginationState & { resetKey: string }
   >({
     page: 1,
-    perPage: 10,
+    perPage: initialPerPage,
     resetKey,
   });
   const current = getPagination({

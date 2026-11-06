@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -18,17 +18,11 @@ import {
   ChevronRight,
   RefreshCw,
   Wallet,
+  X,
 } from "lucide-react";
 import { useActions } from "@/components/providers";
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  LinkButton,
-  PageHeading,
-} from "@/components/ui";
-import { Pagination, PaginationEntries } from "@/components/pagination";
+import { Badge, Button, EmptyState, LinkButton } from "@/components/ui";
+import { Pagination } from "@/components/pagination";
 import {
   errorMessage,
   notificationHref,
@@ -46,17 +40,28 @@ interface InboxActions {
   refresh: () => void;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  openInbox: () => void;
+  closeInbox: () => void;
+  inboxOpen: boolean;
+  inboxContent: ReactNode;
 }
 
 const InboxContext = createContext<InboxActions | null>(null);
 
 /** Each verified account gets its own private count/read lifecycle; demo never fetches account alerts. */
-export function NotificationsProvider({ children }: { children: ReactNode }) {
+export function NotificationsProvider({
+  children,
+  demoContent,
+}: {
+  children: ReactNode;
+  demoContent: ReactNode;
+}) {
   const { session } = useActions();
   return (
     <InboxState
       key={session?.user.id ?? "demo"}
       accountId={session?.user.id ?? null}
+      demoContent={demoContent}
     >
       {children}
     </InboxState>
@@ -67,9 +72,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 function InboxState({
   accountId,
   children,
+  demoContent,
 }: {
   accountId: number | null;
   children: ReactNode;
+  demoContent: ReactNode;
 }) {
   const { request } = useActions();
   const path = usePathname();
@@ -77,6 +84,13 @@ function InboxState({
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const mounted = useRef(true);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  /** Open the private panel beside the notification bell. */
+  const openInbox = useCallback(() => {
+    if (mounted.current) setInboxOpen(true);
+  }, []);
+  /** Dismissal does not change delivery work or unread metadata. */
+  const closeInbox = useCallback(() => setInboxOpen(false), []);
 
   /** An old account's mutation cannot update a replacement account's count. */
   useEffect(() => {
@@ -155,7 +169,22 @@ function InboxState({
 
   return (
     <InboxContext.Provider
-      value={{ unreadCount, revision, refresh, markRead, markAllRead }}
+      value={{
+        unreadCount,
+        revision,
+        refresh,
+        markRead,
+        markAllRead,
+        openInbox,
+        closeInbox,
+        inboxOpen,
+        inboxContent:
+          accountId !== null ? (
+            <AccountNotifications onNavigate={closeInbox} />
+          ) : (
+            demoContent
+          ),
+      }}
     >
       {children}
     </InboxContext.Provider>
@@ -170,13 +199,94 @@ export function useNotifications(): InboxActions {
   return context;
 }
 
+/** Anchor one nonmodal panel to its bell, sharing familiar outside-click/Escape dismissal. */
+export function NotificationPopover({ children }: { children: ReactNode }) {
+  const { inboxOpen, closeInbox, inboxContent } = useNotifications();
+  const menu = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  /** Outside clicks dismiss without blocking the underlying page's action. */
+  useEffect(() => {
+    if (!inboxOpen) return;
+    panel.current?.querySelector<HTMLElement>("button, a[href]")?.focus();
+    /** Ignore clicks inside the trigger/panel, including native pagination. */
+    function outside(event: PointerEvent) {
+      if (event.target instanceof Node && !menu.current?.contains(event.target))
+        closeInbox();
+    }
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [inboxOpen, closeInbox]);
+  return (
+    <div
+      className="notification-menu"
+      ref={menu}
+      onKeyDown={
+        /** Escape closes this panel and returns keyboard focus to the bell. */ (
+          event,
+        ) => {
+          if (event.key !== "Escape" || !inboxOpen) return;
+          event.preventDefault();
+          event.stopPropagation();
+          closeInbox();
+          menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
+        }
+      }
+      onBlur={
+        /** Tab remains free to leave this nonmodal panel. */ (event) => {
+          if (
+            event.relatedTarget instanceof Node &&
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            closeInbox();
+        }
+      }
+    >
+      {children}
+      {inboxOpen && (
+        <section
+          ref={panel}
+          id="notification-panel"
+          className="notification-popover"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="notification-panel-title"
+        >
+          <header className="notification-popover-heading">
+            <h2 id="notification-panel-title">Notifications</h2>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Close notifications"
+              onClick={
+                /** Close explicitly while preserving the page and unread state. */ () => {
+                  closeInbox();
+                  menu.current
+                    ?.querySelector<HTMLButtonElement>("button")
+                    ?.focus();
+                }
+              }
+            >
+              <X size={18} />
+            </button>
+          </header>
+          {inboxContent}
+        </section>
+      )}
+    </div>
+  );
+}
+
 /** Display actual account activity with native pagination and explicit, persistent read actions. */
-export function AccountNotifications() {
+export function AccountNotifications({
+  onNavigate,
+}: {
+  onNavigate: () => void;
+}) {
   const { request, notify } = useActions();
   const { revision, refresh, markRead, markAllRead } = useNotifications();
   const [view, setView] = useState<NotificationView>({
     page: 1,
-    perPage: 10,
+    perPage: 5,
     unreadOnly: false,
     attempt: 0,
   });
@@ -198,7 +308,7 @@ export function AccountNotifications() {
     setView(
       /** Preserve other controls while invalidating old results. */ (
         current,
-      ) => nextNotificationView(current, changes),
+      ) => nextNotificationView(current, { ...changes, perPage: 5 }),
     );
   }, []);
 
@@ -279,6 +389,7 @@ export function AccountNotifications() {
 
   /** Opening a record stays usable even if its independent read confirmation fails. */
   function opened(id: string, alreadyRead: boolean) {
+    onNavigate();
     if (alreadyRead) return;
     void markRead(id).catch(
       /** Refresh actual state after an interrupted confirmation, without blocking navigation. */ () => {
@@ -295,12 +406,8 @@ export function AccountNotifications() {
     label: "Notifications pagination",
   };
   return (
-    <>
-      <PageHeading
-        eyebrow="YOUR SAVED RIDER ACTIVITY"
-        title="Activity & notifications"
-        description="Actual delivery updates, confirmed customer receipts and recorded seller handovers."
-      >
+    <div className="notification-panel-content form-stack">
+      <div className="notification-panel-actions">
         <Button
           variant="secondary"
           onClick={
@@ -316,19 +423,18 @@ export function AccountNotifications() {
           <RefreshCw size={15} />
           Refresh
         </Button>
-        <LinkButton href="/settings" variant="secondary">
+        <LinkButton href="/settings" variant="secondary" onClick={onNavigate}>
           Preferences
           <ArrowRight size={15} />
         </LinkButton>
-      </PageHeading>
+      </div>
       {actionError && (
         <div className="notice notice-amber" role="alert">
           <p>{actionError}</p>
         </div>
       )}
-      <Card>
+      <section aria-label="Notification activity">
         <div className="table-toolbar notification-toolbar">
-          <PaginationEntries {...controls} />
           <div
             className="segmented"
             role="group"
@@ -452,10 +558,24 @@ export function AccountNotifications() {
                 )}
               </div>
             )}
-            <Pagination {...controls} />
+            <Pagination {...controls} compact />
           </>
         )}
-      </Card>
-    </>
+      </section>
+    </div>
   );
+}
+
+/** Old bookmarks open the bell's panel while keeping the page beneath it usable. */
+export function NotificationsBridge() {
+  const { openInbox } = useNotifications();
+  const router = useRouter();
+  useEffect(
+    /** Keep existing inbox bookmarks compatible with the anchored panel. */ () => {
+      openInbox();
+      router.replace("/dashboard");
+    },
+    [openInbox, router],
+  );
+  return null;
 }

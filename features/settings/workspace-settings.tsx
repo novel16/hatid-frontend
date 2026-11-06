@@ -29,14 +29,13 @@ import {
   type Vehicle,
 } from "@/lib/api";
 import { DevicesPanel } from "@/features/settings/devices-panel";
-import { AccountNotifications } from "@/features/settings/account-notifications";
+import {
+  NotificationsBridge,
+  useNotifications,
+} from "@/features/settings/account-notifications";
 import { AccountRecovery } from "@/features/settings/account-recovery";
 import { useActions } from "@/components/providers";
-import {
-  Pagination,
-  PaginationEntries,
-  usePagination,
-} from "@/components/pagination";
+import { Pagination, usePagination } from "@/components/pagination";
 import {
   Avatar,
   Badge,
@@ -595,56 +594,48 @@ function Preference({
 
 /** Real rider activity stays separate from the explicit prototype's sample events. */
 export function NotificationsScreen() {
-  const { session } = useActions();
-  return session ? (
-    <AccountNotifications key={session.user.id} />
-  ) : (
-    <DemoNotifications />
-  );
+  return <NotificationsBridge />;
 }
 
 /** Preserve the demo timeline and local read simulation only for explicit sample access. */
-function DemoNotifications() {
+export function DemoNotificationContent() {
   const state = usePrototypeState();
   const { commit } = useActions();
-  const pagination = usePagination(state.activity);
+  const { closeInbox } = useNotifications();
+  const pagination = usePagination(state.activity, "notifications", 5);
   return (
-    <>
-      <PageHeading
-        eyebrow="A CLEAR PICTURE OF YOUR DAY"
-        title="Activity & notifications"
-        description="Delivery updates, collection records, and the little things worth a look."
-      >
+    <div className="notification-panel-content form-stack">
+      <div className="notification-panel-actions">
         <Button
           variant="secondary"
-          onClick={() =>
-            commit(
-              (current) => ({ ...current, notificationsRead: true }),
-              "All notifications marked as read.",
-            )
+          onClick={
+            /** Mark only sample activity read, never an account inbox. */ () =>
+              commit(
+                /** Preserve the rest of the prototype's workspace data. */ (
+                  current,
+                ) => ({ ...current, notificationsRead: true }),
+                "All notifications marked as read.",
+              )
           }
           disabled={state.notificationsRead}
         >
           <CheckCheck size={16} />
           Mark all as read
         </Button>
-        <LinkButton href="/settings" variant="secondary">
+        <LinkButton href="/settings" variant="secondary" onClick={closeInbox}>
           Preferences
           <ArrowRight size={15} />
         </LinkButton>
-      </PageHeading>
-      <Card>
-        <div className="table-toolbar">
-          <PaginationEntries
-            {...pagination.controls}
-            label="Notifications pagination"
-          />
-        </div>
-        <div className="notification-list">
-          {pagination.items.map((event) => (
+      </div>
+      <div className="notification-list">
+        {pagination.items.map(
+          /** Reuse the same compact dialog layout for sample activity. */ (
+            event,
+          ) => (
             <Link
               key={event.id}
               href={event.href}
+              onClick={closeInbox}
               className={`notification-item ${state.notificationsRead ? "notification-read" : ""}`}
             >
               <span
@@ -668,11 +659,15 @@ function DemoNotifications() {
               </div>
               <ChevronRight size={18} />
             </Link>
-          ))}
-        </div>
-        <Pagination {...pagination.controls} label="Notifications pagination" />
-      </Card>
-    </>
+          ),
+        )}
+      </div>
+      <Pagination
+        {...pagination.controls}
+        compact
+        label="Notifications pagination"
+      />
+    </div>
   );
 }
 
