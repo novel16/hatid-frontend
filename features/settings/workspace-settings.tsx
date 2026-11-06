@@ -34,6 +34,7 @@ import {
   useNotifications,
 } from "@/features/settings/account-notifications";
 import { AccountRecovery } from "@/features/settings/account-recovery";
+import { AppInstallCard } from "@/features/settings/pwa";
 import { useActions } from "@/components/providers";
 import { Pagination, usePagination } from "@/components/pagination";
 import {
@@ -411,6 +412,7 @@ export function SettingsScreen() {
               </LinkButton>
             </div>
           </Card>
+          <AppInstallCard />
           <div className="settings-brand-note">
             <Package size={23} />
             <strong>hatid.</strong>

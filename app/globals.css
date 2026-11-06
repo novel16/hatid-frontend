@@ -6428,3 +6428,60 @@ input[aria-invalid="true"] {
     right: 12px;
   }
 }
+.pwa-notices {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  z-index: 70;
+  width: min(480px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+.pwa-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  background: white;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px #153b321a;
+  pointer-events: auto;
+}
+.pwa-notice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  flex: 1;
+}
+.pwa-notice strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+.pwa-notice > svg {
+  flex-shrink: 0;
+}
+.pwa-notice .button {
+  padding: 8px 10px;
+  min-height: 36px;
+  font-size: 11px;
+}
+.install-instructions h3 {
+  margin: 14px 0 4px;
+  font-size: 14px;
+}
+.install-instructions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+@media (max-width: 640px) {
+  .pwa-notices {
+    right: 12px;
+    bottom: 86px;
+  }
+}

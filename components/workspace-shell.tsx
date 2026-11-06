@@ -33,6 +33,7 @@ import {
   useNotifications,
 } from "@/features/settings/account-notifications";
 import { useRecovery } from "@/features/settings/account-recovery";
+import { usePwa } from "@/features/settings/pwa";
 
 const links = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -53,6 +54,7 @@ const links = [
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const state = usePrototypeState();
   const { session } = useActions();
+  const { online } = usePwa();
   const { unreadCount, openInbox, closeInbox, inboxOpen } = useNotifications();
   const { entries: recoveryEntries, error: recoveryError } = useRecovery();
   const recoveryCount = recoveryEntries?.filter(
@@ -270,23 +272,25 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               className={`sync-status ${!session && state.offline ? "is-offline" : ""}`}
               title="Open sync status"
             >
-              {!session && state.offline ? (
+              {online === false || (!session && state.offline) ? (
                 <CloudOff size={16} />
               ) : (
                 <CloudCheck size={16} />
               )}
               <span>
-                {session
-                  ? recoveryError
-                    ? "Recovery needs attention"
-                    : recoveryCount === undefined
-                      ? "Checking local work…"
-                      : recoveryCount
-                        ? `${recoveryCount} to review`
-                        : "Drafts & recovery"
-                  : state.offline
-                    ? "Offline"
-                    : "All changes saved"}
+                {online === false
+                  ? "Device offline"
+                  : session
+                    ? recoveryError
+                      ? "Recovery needs attention"
+                      : recoveryCount === undefined
+                        ? "Checking local work…"
+                        : recoveryCount
+                          ? `${recoveryCount} to review`
+                          : "Drafts & recovery"
+                    : state.offline
+                      ? "Offline"
+                      : "All changes saved"}
               </span>
             </Link>
             <NotificationPopover>

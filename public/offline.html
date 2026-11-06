@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en-PH">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#006b54" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Reconnect · Hatid</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #f4f7f4;
+        color: #153b32;
+        font:
+          16px/1.6 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 480px;
+        padding: 36px;
+        background: white;
+        border: 1px solid #dce5df;
+        border-radius: 24px;
+      }
+      img {
+        width: 64px;
+        height: 64px;
+      }
+      small {
+        display: block;
+        margin-top: 24px;
+        color: #58746b;
+      }
+      h1 {
+        margin: 16px 0 8px;
+        font-size: 30px;
+        line-height: 1.2;
+      }
+      p {
+        color: #58746b;
+      }
+      a {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 12px 20px;
+        border-radius: 10px;
+        color: white;
+        background: #006b54;
+        font-weight: 650;
+        text-decoration: none;
+      }
+      a:focus-visible {
+        outline: 3px solid #76b79e;
+        outline-offset: 4px;
+      }
+      @media (max-width: 420px) {
+        main {
+          padding: 26px;
+        }
+        h1 {
+          font-size: 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/hatid-icon-192.png" alt="Hatid" />
+      <small>YOUR WORK CAN WAIT SAFELY</small>
+      <h1>Let’s reconnect.</h1>
+      <p>
+        Hatid couldn’t reach the site. Check your connection, then try again.
+      </p>
+      <p>
+        Committed local drafts and interrupted submissions remain on this
+        browser or installed app. Reconnect and sign in to the same rider
+        account to review Drafts &amp; recovery.
+      </p>
+      <a href="/dashboard">Try again</a>
+      <small
+        >This page contains no saved customer, delivery or payment records.
+        Nothing is sent automatically.</small
+      >
+    </main>
+  </body>
+</html>
