@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { BatchesScreen } from "@/features/batches/batches-screen";
 export const metadata = { title: "Batch details" };
+// The workspace verifies rider access before this segment can render.
+export const instant = false;
 type Props = { params: Promise<{ id: string }> };
 async function Batch({ params }: Props) {
   const { id } = await params;

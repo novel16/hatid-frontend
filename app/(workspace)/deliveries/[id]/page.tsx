@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { DeliveryDetailScreen } from "@/features/deliveries/delivery-detail-screen";
 export const metadata = { title: "Delivery details" };
+// The workspace verifies rider access before this segment can render.
+export const instant = false;
 type Props = { params: Promise<{ id: string }> };
 async function Delivery({ params }: Props) {
   const { id } = await params;
