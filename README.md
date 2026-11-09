@@ -1,5 +1,19 @@
 # Hatid rider client
 
+## Cloudflare production
+
+Cloudflare Workers Builds is configured for `main` on `novel16/hatid-frontend`.
+It runs the tests and typecheck, builds with `npm run build:cloudflare`, and
+publishes that output with `npm run deploy:cloudflare`.
+
+Set `NEXT_PUBLIC_API_URL` in the Worker's **Build variables** to the HTTPS
+Laravel origin. The build embeds it in the browser bundle. Add the Worker's
+exact origin to Laravel's allowed origins before serving rider traffic.
+
+`cloudflare.config.ts` selects the Worker and static asset routing.
+`vite.config.ts` adapts the existing App Router and Tailwind for the hosted
+build. Local development uses `npm run dev` on port 3011.
+
 ## Native PWA foundation — 6 November
 
 Settings → Hatid on this device opens installation guidance for Android, iPhone/iPad and desktop. A native install button appears only when the browser provides its install invitation. Running standalone/appinstalled confirms installed state; accepting a prompt alone does not. The installed app can have its own tab sign-in session; sessionStorage Bearer credentials and /auth/me verification are unchanged.
