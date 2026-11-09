@@ -12,7 +12,14 @@ export interface AccountPreferences {
   compactView: boolean;
 }
 
-export type Vehicle = "motorcycle" | "bicycle" | "car";
+export const VEHICLE_LABELS = {
+  motorcycle: "Motorcycle",
+  trijet: "Trijet",
+  bicycle: "Bicycle",
+  car: "Car",
+} as const;
+
+export type Vehicle = keyof typeof VEHICLE_LABELS;
 
 export interface ApiRequestOptions {
   responseType?: "json" | "blob" | "csv";

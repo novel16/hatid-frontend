@@ -26,6 +26,7 @@ import { GeoMap, type GeoMarker } from "@/components/geo-map";
 import { AccountDeliveriesScreen } from "@/features/deliveries/account-deliveries";
 import {
   validationMessage,
+  VEHICLE_LABELS,
   type ApiDelivery,
   type MapCandidate,
   type MapOverview,
@@ -36,7 +37,6 @@ import {
   navigationUrl,
   readCurrentLocation,
   resolveMapSelection,
-  VEHICLE_LABELS,
   type GpsReading,
 } from "@/lib/maps";
 import { money } from "@/lib/prototype/domain";

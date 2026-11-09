@@ -21,6 +21,7 @@ import {
   PackageOpen,
   X,
 } from "lucide-react";
+import { VEHICLE_LABELS } from "@/lib/api";
 import { initials } from "@/lib/prototype/domain";
 import type { ParcelStatus } from "@/lib/prototype/types";
 
@@ -62,9 +63,14 @@ export function VehicleSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
       <option value="" disabled>
         Choose your vehicle
       </option>
-      <option value="motorcycle">Motorcycle</option>
-      <option value="bicycle">Bicycle</option>
-      <option value="car">Car</option>
+      {Object.entries(VEHICLE_LABELS).map(
+        /** Show the same vehicle labels as the rider map. */
+        ([vehicle, label]) => (
+          <option key={vehicle} value={vehicle}>
+            {label}
+          </option>
+        ),
+      )}
     </select>
   );
 }

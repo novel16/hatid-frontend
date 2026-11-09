@@ -172,10 +172,11 @@ test("ready parcel display uses due holds at the exact time boundary", () => {
 
 /** Coordinate zero is valid; missing, non-finite or out-of-range values cannot form a navigation destination. */
 test("navigation uses saved coordinates and the rider vehicle without exposing app credentials", () => {
-  for (const [vehicle, mode] of [
-    ["motorcycle", "two-wheeler"],
-    ["bicycle", "bicycling"],
-    ["car", "driving"],
+  for (const [vehicle, mode, avoid] of [
+    ["motorcycle", "two-wheeler", null],
+    ["trijet", "driving", "highways"],
+    ["bicycle", "bicycling", null],
+    ["car", "driving", null],
   ] as const) {
     const value = maps.navigationUrl(
       { latitude: 14.5995, longitude: 120.9842 },
@@ -186,6 +187,7 @@ test("navigation uses saved coordinates and the rider vehicle without exposing a
     assert.equal(url.origin, "https://www.google.com");
     assert.equal(url.searchParams.get("destination"), "14.5995,120.9842");
     assert.equal(url.searchParams.get("travelmode"), mode);
+    assert.equal(url.searchParams.get("avoid"), avoid);
     assert.equal(url.searchParams.get("dir_action"), "navigate");
     assert.equal(url.searchParams.get("origin"), null);
     assert.equal(url.searchParams.get("apiKey"), null);

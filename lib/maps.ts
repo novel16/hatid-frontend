@@ -49,12 +49,6 @@ export function deliverySelection(
     );
 }
 
-export const VEHICLE_LABELS: Record<Vehicle, string> = {
-  motorcycle: "Motorcycle",
-  bicycle: "Bicycle",
-  car: "Car",
-};
-
 /** Resolve a refreshed manual choice before applying UI side effects; obsolete work returns no decision. */
 export async function resolveMapSelection(
   candidates: MapCandidate[],
@@ -165,18 +159,18 @@ export function navigationUrl(
   if (!hasCoordinates(point)) return null;
   const modes = {
     motorcycle: "two-wheeler",
+    trijet: "driving",
     bicycle: "bicycling",
     car: "driving",
   };
-  return (
-    "https://www.google.com/maps/dir/?" +
-    new URLSearchParams({
-      api: "1",
-      destination: `${point.latitude},${point.longitude}`,
-      travelmode: modes[vehicle],
-      dir_action: "navigate",
-    })
-  );
+  const params = new URLSearchParams({
+    api: "1",
+    destination: `${point.latitude},${point.longitude}`,
+    travelmode: modes[vehicle],
+    dir_action: "navigate",
+  });
+  if (vehicle === "trijet") params.set("avoid", "highways");
+  return "https://www.google.com/maps/dir/?" + params;
 }
 
 /** Keep the client review window consistent with the independently enforced API checks. */
