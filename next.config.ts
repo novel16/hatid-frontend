@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 import { randomUUID } from "node:crypto";
 
+const cloudflareBuild =
+  process.env.NODE_ENV === "production" &&
+  Boolean(process.env.CLOUDFLARE_ACCOUNT_ID);
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_HATID_RELEASE:
@@ -13,8 +17,9 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
-  cacheComponents: true,
-  partialPrefetching: true,
+  // The hosted build does not use Next.js Cache Components or ISR.
+  cacheComponents: !cloudflareBuild,
+  partialPrefetching: !cloudflareBuild,
   turbopack: {
     rules: {
       "*.css": {
