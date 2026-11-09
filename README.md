@@ -3,8 +3,8 @@
 ## Cloudflare production
 
 Cloudflare Workers Builds is configured for `main` on `novel16/hatid-frontend`.
-It runs the tests and typecheck, builds with `npm run build:cloudflare`, and
-publishes that output with `npm run deploy:cloudflare`.
+It runs the tests and typecheck, then builds and publishes the Worker with
+`npm run deploy:cloudflare`.
 
 Set `NEXT_PUBLIC_API_URL` in the Worker's **Build variables** to the HTTPS
 Laravel origin. The build embeds it in the browser bundle. Add the Worker's
