@@ -672,7 +672,7 @@ function AccountParcelForm({
               description="Each parcel keeps its original batch and its own fixed pricing."
             >
               <div className="card-body form-stack">
-                <div className="form-grid">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-[17px]">
                   <div className="form-stack">
                     <ParcelDirectorySelect
                       kind="batch"
